@@ -2,6 +2,9 @@
 
 발효곤약 브랜드 **다름(DALEUM)** 의 공식 자사몰. "조용한 럭셔리 프레시 홀" 컨셉의 프리미엄 커머스.
 
+- **프로덕션**: https://daleum-mall.vercel.app (별칭: daleum-pied.vercel.app)
+- **저장소**: https://github.com/jooyeonthemaster/DALEUM — main 푸시 시 Vercel 자동 배포
+
 ## 스택
 
 - **Next.js 16** (App Router) · TypeScript · Tailwind CSS v4
