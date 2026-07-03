@@ -6,7 +6,8 @@ import ProductCard from "@/components/shop/ProductCard";
 import EmptyState from "@/components/shop/EmptyState";
 import Reveal from "@/components/shop/Reveal";
 import CategoryTabs, { type CategoryTabItem } from "@/components/catalog/CategoryTabs";
-import SortSelect, { parseSortKey, type SortKey } from "@/components/catalog/SortSelect";
+import SortSelect from "@/components/catalog/SortSelect";
+import { parseSortKey, type SortKey } from "@/components/catalog/sort";
 import PaginationNav from "@/components/catalog/PaginationNav";
 import {
   PRODUCT_CARD_SELECT,

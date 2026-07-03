@@ -59,7 +59,7 @@ export default async function VipShopPage() {
         <Reveal>
           <p className="label-caps text-brass-300">Private Selection</p>
           <h1 className="headline-serif mt-5 max-w-3xl text-3xl leading-tight text-cream-50 md:text-5xl">
-            {groupName} 그룹을 위한
+            {groupName}을 위한
             <br />
             프라이빗 셀렉션
           </h1>
