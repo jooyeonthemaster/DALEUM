@@ -1,0 +1,110 @@
+- generic [ref=f50e3]:
+  - link "본문으로 바로가기" [ref=f50e4] [cursor=pointer]:
+    - /url: "#content"
+    - generic [ref=f50e5]: 본문으로 바로가기
+  - generic [ref=f50e6]:
+    - banner [ref=f50e8]:
+      - generic [ref=f50e13]:
+        - link "이전으로 가기" [ref=f50e14] [cursor=pointer]:
+          - /url: "#"
+          - generic [ref=f50e15]: 이전으로 가기
+          - img [ref=f50e16]
+        - link "네이버플러스 스토어 홈" [ref=f50e18] [cursor=pointer]:
+          - /url: https://shopping.naver.com/ns/home?
+          - generic [ref=f50e19]: 네이버플러스 스토어 홈
+          - img [ref=f50e20]
+        - heading "지엘푸드스토리" [level=1] [ref=f50e22]:
+          - link "지엘푸드스토리" [ref=f50e23] [cursor=pointer]:
+            - /url: /glfoodstory
+            - img "지엘푸드스토리" [ref=f50e24]
+        - generic [ref=f50e25]:
+          - button "검색창 펼치기" [ref=f50e26] [cursor=pointer]:
+            - generic [ref=f50e27]: 검색창 펼치기
+            - img [ref=f50e28]
+          - link "장바구니" [ref=f50e31] [cursor=pointer]:
+            - /url: https://shopping.naver.com/cart?channelNo=500074386
+            - generic [ref=f50e32]: 장바구니
+            - img [ref=f50e33]
+          - link "전체메뉴" [ref=f50e36] [cursor=pointer]:
+            - /url: "#"
+            - generic [ref=f50e37]: 전체메뉴
+            - img [ref=f50e38]
+    - generic [ref=f50e40]:
+      - generic [ref=f50e44]:
+        - generic "상품 이미지" [ref=f50e48]:
+          - img [ref=f50e49]
+          - generic [ref=f50e50]: 대표이미지
+        - generic [ref=f50e52]:
+          - heading "마틴조 발효곤약라면(매운맛)" [level=3] [ref=f50e53]
+          - generic [ref=f50e55]:
+            - generic [ref=f50e56]:
+              - img [ref=f50e57]
+              - generic [ref=f50e59]: "0.0"
+            - generic [ref=f50e61]: 0건 리뷰
+      - generic [ref=f50e85]:
+        - generic [ref=f50e88]:
+          - heading "하위내용" [level=2] [ref=f50e89]
+          - generic [ref=f50e90]:
+            - generic [ref=f50e91]:
+              - heading "법적고지" [level=3] [ref=f50e92]
+              - link "자세히 보기" [ref=f50e93] [cursor=pointer]:
+                - /url: https://help.pay.naver.com/faq/content.help?faqId=10909
+                - text: 자세히 보기
+                - img [ref=f50e94]
+            - paragraph [ref=f50e96]: 네이버(주)는 통신판매중개자이며, 통신판매 당사자가 아닙니다. 통신판매업자 신고, 신원 및 거래조건 정보 제공, 상품의 주문, 배송, 환불 등 거래의 의무와 책임은 각 판매자에게 있고, 네이버(주)는 책임을 지지 않습니다.
+          - generic [ref=f50e97]:
+            - link "NAVER" [ref=f50e98] [cursor=pointer]:
+              - /url: http://www.navercorp.com
+              - img [ref=f50e99]
+              - generic [ref=f50e104]: NAVER
+            - list [ref=f50e105]:
+              - listitem [ref=f50e106]:
+                - link "사업자정보 확인" [ref=f50e107] [cursor=pointer]:
+                  - /url: https://www.ftc.go.kr/bizCommPop.do?wrkr_no=2208162517
+              - listitem [ref=f50e108]:
+                - link "네이버 이용약관" [ref=f50e109] [cursor=pointer]:
+                  - /url: https://policy.naver.com/policy-mobile/term.html
+              - listitem [ref=f50e110]:
+                - link "네이버페이 이용약관" [ref=f50e111] [cursor=pointer]:
+                  - /url: https://new-m.pay.naver.com/member/viewer/pdf?file=npay-usage
+              - listitem [ref=f50e112]:
+                - link "쇼핑&페이 고객센터" [ref=f50e113] [cursor=pointer]:
+                  - /url: https://help.pay.naver.com/index.help
+              - listitem [ref=f50e114]:
+                - link "전자금융거래약관" [ref=f50e115] [cursor=pointer]:
+                  - /url: https://new-m.pay.naver.com/member/terms-policy/finance
+              - listitem [ref=f50e116]:
+                - link "개인정보처리방침" [ref=f50e117] [cursor=pointer]:
+                  - /url: https://policy.naver.com/policy-mobile/privacy.html
+                  - strong [ref=f50e118]: 개인정보처리방침
+            - button "네이버㈜ 사업자 정보" [ref=f50e120] [cursor=pointer]:
+              - text: 네이버㈜ 사업자 정보
+              - img [ref=f50e121]
+          - generic [ref=f50e123]:
+            - list [ref=f50e124]:
+              - listitem [ref=f50e125]:
+                - link "쇼핑&페이 구매자 고객센터 1588-3819" [ref=f50e126] [cursor=pointer]:
+                  - /url: tel:1588-3819
+                  - text: 쇼핑&페이 구매자 고객센터
+                  - generic [ref=f50e127]:
+                    - text: 1588-3819
+                    - img [ref=f50e128]
+              - listitem [ref=f50e130]:
+                - link "네이버 대표전화 1588-3820" [ref=f50e131] [cursor=pointer]:
+                  - /url: tel:1588-3820
+                  - text: 네이버 대표전화
+                  - generic [ref=f50e132]:
+                    - text: 1588-3820
+                    - img [ref=f50e133]
+              - listitem [ref=f50e135]:
+                - link "네이버플러스 멤버십 전용 고객센터 1599-1399" [ref=f50e136] [cursor=pointer]:
+                  - /url: tel:1599-1399
+                  - text: 네이버플러스 멤버십 전용 고객센터
+                  - generic [ref=f50e137]:
+                    - text: 1599-1399
+                    - img [ref=f50e138]
+            - button "로그인" [ref=f50e140] [cursor=pointer]
+        - generic:
+          - generic:
+            - button "맨위로":
+              - img "맨위로"
