@@ -44,3 +44,5 @@ next-env.d.ts
 DALEUM brochure.pdf
 hwp_mcp.log
 *.log
+
+.playwright-mcp/

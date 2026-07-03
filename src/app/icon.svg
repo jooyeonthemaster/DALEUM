@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <rect width="64" height="64" rx="14" fill="#1d372b"/>
+  <!-- 잎사귀 두 장 — 다름 리프 마크 -->
+  <path d="M32 14 C 40 20, 44 28, 42 38 C 34 36, 28 28, 30 18 Z" fill="#97c0a6"/>
+  <path d="M25 26 C 31 30, 34 37, 33 46 C 26 44, 21 37, 22 29 Z" fill="#f6f4ec"/>
+</svg>

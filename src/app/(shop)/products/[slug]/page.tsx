@@ -1,0 +1,505 @@
+import type { Metadata } from "next";
+import Link from "next/link";
+import { notFound } from "next/navigation";
+import { cache } from "react";
+import { createClient } from "@/lib/supabase/server";
+import { createServiceClient } from "@/lib/supabase/service";
+import { resolvePrice } from "@/lib/pricing";
+import { getShippingSettings } from "@/lib/shipping";
+import { COMPANY, STORAGE_TYPE_LABELS } from "@/lib/constants";
+import { krw } from "@/lib/format";
+import type {
+  ProductVariant,
+  ProductWithImages,
+  StorageType,
+} from "@/lib/types";
+import ProductCard from "@/components/shop/ProductCard";
+import SectionTitle from "@/components/shop/SectionTitle";
+import Gallery from "@/components/catalog/Gallery";
+import AddToCart, {
+  type PurchaseOption,
+  type SpecRow,
+} from "@/components/catalog/AddToCart";
+import WishlistButton from "@/components/catalog/WishlistButton";
+import StoryBlock from "@/components/catalog/StoryBlock";
+import SpecTable from "@/components/catalog/SpecTable";
+import ReviewsSection, {
+  type ReviewItem,
+} from "@/components/catalog/ReviewsSection";
+import InquiriesSection, {
+  type InquiryItem,
+} from "@/components/catalog/InquiriesSection";
+import ProductViewTracker from "@/components/catalog/ProductViewTracker";
+import {
+  PRODUCT_CARD_SELECT,
+  VISIBLE_STATUSES,
+  getRequestVipPricing,
+  toPricedProducts,
+} from "@/components/catalog/queries";
+
+type Params = Promise<{ slug: string }>;
+
+const PAID_STATUSES = ["paid", "preparing", "shipped", "delivered", "confirmed"];
+
+const getProduct = cache(async (slug: string) => {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("products")
+    .select("*, product_images(*), product_variants(*), categories(id, slug, name)")
+    .eq("slug", slug)
+    .in("status", [...VISIBLE_STATUSES])
+    .maybeSingle();
+  return data as unknown as ProductWithImages | null;
+});
+
+function maskName(name: string | null | undefined): string {
+  const trimmed = name?.trim();
+  if (!trimmed) return "익명";
+  return `${trimmed[0]}**`;
+}
+
+const STORAGE_SHIPPING_NOTES: Record<StorageType, string> = {
+  room: "일반 택배로 안전하게 포장해 보내드립니다.",
+  chilled: "신선함을 지키는 냉장 전용 택배로 보내드립니다.",
+  frozen: "드라이아이스와 함께 냉동 전용 택배로 보내드립니다.",
+};
+
+export async function generateMetadata({
+  params,
+}: {
+  params: Params;
+}): Promise<Metadata> {
+  const { slug } = await params;
+  const product = await getProduct(slug);
+  if (!product) return { title: "상품을 찾을 수 없습니다" };
+
+  const images = [...(product.product_images ?? [])].sort(
+    (a, b) => a.sort_order - b.sort_order
+  );
+  const primary = images.find((img) => img.is_primary) ?? images[0];
+  const description =
+    product.subtitle ??
+    product.description?.slice(0, 160) ??
+    "발효로 완성한 다름의 곤약 식탁.";
+
+  return {
+    title: product.name,
+    description,
+    openGraph: {
+      title: product.name,
+      description,
+      type: "website",
+      ...(primary ? { images: [{ url: primary.url, alt: product.name }] } : {}),
+    },
+  };
+}
+
+export default async function ProductDetailPage({ params }: { params: Params }) {
+  const { slug } = await params;
+  const product = await getProduct(slug);
+  if (!product) notFound();
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const images = [...(product.product_images ?? [])]
+    .sort((a, b) => a.sort_order - b.sort_order)
+    .sort((a, b) => Number(b.is_primary) - Number(a.is_primary));
+  const primaryImageUrl = images[0]?.url ?? null;
+
+  const variants: ProductVariant[] = [...(product.product_variants ?? [])]
+    .filter((v) => v.is_active)
+    .sort((a, b) => a.sort_order - b.sort_order);
+
+  // ---------- VIP 가격 해석 (상품 + 옵션별) ----------
+  const vip = await getRequestVipPricing();
+  let effectivePrice = product.price;
+  let vipApplied = false;
+  const options: PurchaseOption[] = [];
+
+  if (vip) {
+    const base = await resolvePrice(
+      vip.service,
+      { id: product.id, price: product.price },
+      vip.ctx
+    );
+    effectivePrice = Math.min(base.effective, product.price);
+    vipApplied = base.vipApplied && effectivePrice < product.price;
+  }
+  for (const v of variants) {
+    const original = product.price + v.price_delta;
+    let effective = original;
+    if (vip) {
+      const resolved = await resolvePrice(
+        vip.service,
+        { id: product.id, price: original },
+        vip.ctx
+      );
+      effective = Math.min(resolved.effective, original);
+    }
+    options.push({
+      id: v.id,
+      name: v.name,
+      priceDelta: v.price_delta,
+      stock: v.stock,
+      effectivePrice: effective,
+      originalPrice: original,
+    });
+  }
+
+  // ---------- 위시리스트 / 리뷰 작성 가능 여부 (로그인 시) ----------
+  let wished = false;
+  let orderItemId: string | null = null;
+  let alreadyReviewed = false;
+  if (user) {
+    const [wishResult, orderItemResult, myReviewResult] = await Promise.all([
+      supabase
+        .from("wishlists")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("product_id", product.id)
+        .maybeSingle(),
+      supabase
+        .from("order_items")
+        .select("id, orders!inner(user_id, status)")
+        .eq("product_id", product.id)
+        .eq("orders.user_id", user.id)
+        .in("orders.status", PAID_STATUSES)
+        .limit(1),
+      supabase
+        .from("reviews")
+        .select("id")
+        .eq("product_id", product.id)
+        .eq("user_id", user.id)
+        .limit(1),
+    ]);
+    wished = wishResult.data != null;
+    orderItemId = orderItemResult.data?.[0]?.id ?? null;
+    alreadyReviewed = (myReviewResult.data?.length ?? 0) > 0;
+  }
+
+  // ---------- 리뷰/문의 (작성자 이름 마스킹을 위해 service client) ----------
+  const service = createServiceClient();
+  const [reviewsResult, inquiriesResult, shippingSettings] = await Promise.all([
+    service
+      .from("reviews")
+      .select("id, user_id, order_item_id, rating, content, image_urls, admin_reply, created_at, profiles(name)")
+      .eq("product_id", product.id)
+      .eq("is_hidden", false)
+      .order("created_at", { ascending: false })
+      .limit(200),
+    service
+      .from("product_inquiries")
+      .select("id, user_id, question, answer, is_private, answered_at, created_at, profiles(name)")
+      .eq("product_id", product.id)
+      .order("created_at", { ascending: false })
+      .limit(100),
+    getShippingSettings(supabase),
+  ]);
+
+  const reviews: ReviewItem[] = (
+    (reviewsResult.data ?? []) as unknown as {
+      id: string;
+      user_id: string;
+      order_item_id: string | null;
+      rating: number;
+      content: string;
+      image_urls: string[];
+      admin_reply: string | null;
+      created_at: string;
+      profiles: { name: string | null } | null;
+    }[]
+  ).map((r) => ({
+    id: r.id,
+    maskedName: maskName(r.profiles?.name),
+    rating: r.rating,
+    content: r.content,
+    imageUrls: r.image_urls ?? [],
+    isBuyer: r.order_item_id != null,
+    adminReply: r.admin_reply,
+    createdAt: r.created_at,
+  }));
+
+  const inquiries: InquiryItem[] = (
+    (inquiriesResult.data ?? []) as unknown as {
+      id: string;
+      user_id: string;
+      question: string;
+      answer: string | null;
+      is_private: boolean;
+      answered_at: string | null;
+      created_at: string;
+      profiles: { name: string | null } | null;
+    }[]
+  ).map((q) => {
+    const isMine = user != null && q.user_id === user.id;
+    const locked = q.is_private && !isMine;
+    return {
+      id: q.id,
+      maskedName: maskName(q.profiles?.name),
+      question: locked ? null : q.question,
+      answer: locked ? null : q.answer,
+      isPrivate: q.is_private,
+      isMine,
+      answered: q.answer != null,
+      createdAt: q.created_at,
+    };
+  });
+
+  // ---------- 관련 상품 (같은 카테고리 4개) ----------
+  let relatedRows: ProductWithImages[] = [];
+  if (product.category_id) {
+    const { data } = await supabase
+      .from("products")
+      .select(PRODUCT_CARD_SELECT)
+      .in("status", [...VISIBLE_STATUSES])
+      .eq("category_id", product.category_id)
+      .neq("id", product.id)
+      .order("view_count", { ascending: false })
+      .limit(4);
+    relatedRows = (data ?? []) as unknown as ProductWithImages[];
+  }
+  if (relatedRows.length < 4) {
+    const excludeIds = [product.id, ...relatedRows.map((p) => p.id)];
+    const { data } = await supabase
+      .from("products")
+      .select(PRODUCT_CARD_SELECT)
+      .in("status", [...VISIBLE_STATUSES])
+      .not("id", "in", `(${excludeIds.join(",")})`)
+      .order("created_at", { ascending: false })
+      .limit(4 - relatedRows.length);
+    relatedRows = [
+      ...relatedRows,
+      ...((data ?? []) as unknown as ProductWithImages[]),
+    ];
+  }
+  const related = await toPricedProducts(relatedRows);
+
+  // ---------- 구매 박스 스펙 행 ----------
+  const specRows: SpecRow[] = [
+    { label: "보관 방법", value: STORAGE_TYPE_LABELS[product.storage_type] },
+    ...(product.origin ? [{ label: "원산지", value: product.origin }] : []),
+    ...(product.weight ? [{ label: "중량", value: product.weight }] : []),
+    ...(product.units_per_pack > 1
+      ? [{ label: "구성", value: `${product.units_per_pack}개입` }]
+      : []),
+  ];
+
+  const detailSpecs: Record<string, string | number> = {
+    "보관 방법": STORAGE_TYPE_LABELS[product.storage_type],
+    ...(product.origin ? { 원산지: product.origin } : {}),
+    ...(product.weight ? { 중량: product.weight } : {}),
+    ...(product.units_per_pack > 1
+      ? { 구성: `${product.units_per_pack}개입` }
+      : {}),
+    ...product.specs,
+  };
+
+  const hasNutrition = Object.keys(product.nutrition ?? {}).length > 0;
+  const loginNext = `/products/${product.slug}`;
+  const soldOut = product.status === "sold_out" || product.stock <= 0;
+
+  return (
+    <div className="pb-24 lg:pb-0">
+      <ProductViewTracker productId={product.id} />
+
+      <div className="container-hall pt-8 md:pt-12">
+        {/* ---------- 갤러리 + 구매 박스 ---------- */}
+        <div className="grid gap-10 lg:grid-cols-2 lg:gap-16 xl:gap-24">
+          <Gallery
+            images={images.map((img) => ({ url: img.url, alt: img.alt }))}
+            name={product.name}
+          />
+
+          <div className="lg:sticky lg:top-28 lg:self-start">
+            {product.categories && (
+              <Link
+                href={`/products?category=${product.categories.slug}`}
+                className="label-caps text-forest-600 transition-colors hover:text-forest-800"
+              >
+                {product.categories.name}
+              </Link>
+            )}
+            <h1 className="headline-serif mt-3 text-[1.7rem] text-ink-900 md:text-3xl">
+              {product.name}
+            </h1>
+            {product.subtitle && (
+              <p className="mt-2.5 text-[15px] text-ink-500">{product.subtitle}</p>
+            )}
+            {product.badges.length > 0 && (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {product.badges.map((badge) => (
+                  <span
+                    key={badge}
+                    className="label-caps rounded-full border border-ink-200 px-2.5 py-1 text-[9px] text-ink-600"
+                  >
+                    {badge}
+                  </span>
+                ))}
+              </div>
+            )}
+            {product.description && (
+              <p className="mt-5 text-sm leading-relaxed text-ink-600">
+                {product.description}
+              </p>
+            )}
+
+            <AddToCart
+              className="mt-8"
+              product={{
+                id: product.id,
+                slug: product.slug,
+                name: product.name,
+                stock: product.stock,
+                soldOut,
+                effectivePrice,
+                price: product.price,
+                compareAtPrice: product.compare_at_price,
+                vipApplied,
+                imageUrl: primaryImageUrl,
+              }}
+              options={options}
+              specs={specRows}
+              wishlistSlot={
+                <WishlistButton
+                  productId={product.id}
+                  initialWished={wished}
+                  isLoggedIn={user != null}
+                  next={loginNext}
+                />
+              }
+            />
+          </div>
+        </div>
+
+        {/* ---------- 상세 섹션 ---------- */}
+        <div className="mx-auto mt-20 max-w-3xl md:mt-28">
+          {/* 에디토리얼 스토리 */}
+          {product.story && (
+            <section className="hairline-t py-14 md:py-16">
+              <p className="label-caps text-center text-forest-600">Story</p>
+              <h2 className="headline-serif mt-3 text-center text-2xl text-ink-900">
+                다름이 빚은 이야기
+              </h2>
+              <StoryBlock story={product.story} className="mt-10" />
+            </section>
+          )}
+
+          {/* 영양 정보 */}
+          {hasNutrition && (
+            <section className="hairline-t py-14 md:py-16">
+              <SectionTitle
+                overline="Nutrition"
+                title="영양 정보"
+                className="mb-8"
+              />
+              <SpecTable data={product.nutrition} columns={2} />
+            </section>
+          )}
+
+          {/* 상세 스펙 */}
+          <section className="hairline-t py-14 md:py-16">
+            <SectionTitle
+              overline="Details"
+              title="상세 정보"
+              className="mb-8"
+            />
+            <SpecTable data={detailSpecs} />
+          </section>
+
+          {/* 배송 안내 */}
+          <section className="hairline-t py-14 md:py-16">
+            <SectionTitle
+              overline="Delivery"
+              title="배송 안내"
+              className="mb-8"
+            />
+            <dl className="hairline-t">
+              <div className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-3">
+                <dt className="shrink-0 text-sm text-ink-500">배송비</dt>
+                <dd className="krw text-right text-sm text-ink-900">
+                  {krw(shippingSettings.base_fee)}원 —{" "}
+                  {krw(shippingSettings.free_threshold)}원 이상 무료 배송
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-3">
+                <dt className="shrink-0 text-sm text-ink-500">배송 방법</dt>
+                <dd className="text-right text-sm text-ink-900">
+                  {STORAGE_SHIPPING_NOTES[product.storage_type]}
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-3">
+                <dt className="shrink-0 text-sm text-ink-500">출고</dt>
+                <dd className="text-right text-sm text-ink-900">
+                  평일 기준 1–2일 내 출고됩니다.
+                </dd>
+              </div>
+              <div className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-3">
+                <dt className="shrink-0 text-sm text-ink-500">도서산간</dt>
+                <dd className="krw text-right text-sm text-ink-900">
+                  추가 배송비 {krw(shippingSettings.island_extra)}원이 발생할 수
+                  있습니다.
+                </dd>
+              </div>
+            </dl>
+            <p className="mt-5 text-[13px] leading-relaxed text-ink-400">
+              배송 관련 문의는 고객센터 {COMPANY.tel} ({COMPANY.csHours})로
+              연락해 주세요.
+            </p>
+          </section>
+
+          {/* 리뷰 */}
+          <section id="reviews" className="hairline-t py-14 md:py-16">
+            <SectionTitle
+              overline="Reviews"
+              title={`고객 리뷰${reviews.length > 0 ? ` (${reviews.length})` : ""}`}
+              className="mb-10"
+            />
+            <ReviewsSection
+              productId={product.id}
+              reviews={reviews}
+              isLoggedIn={user != null}
+              alreadyReviewed={alreadyReviewed}
+              orderItemId={orderItemId}
+              loginNext={loginNext}
+            />
+          </section>
+
+          {/* 상품 문의 */}
+          <section id="inquiries" className="hairline-t py-14 md:py-16">
+            <SectionTitle
+              overline="Q&amp;A"
+              title={`상품 문의${inquiries.length > 0 ? ` (${inquiries.length})` : ""}`}
+              className="mb-10"
+            />
+            <InquiriesSection
+              productId={product.id}
+              inquiries={inquiries}
+              isLoggedIn={user != null}
+              loginNext={loginNext}
+            />
+          </section>
+        </div>
+
+        {/* ---------- 관련 상품 ---------- */}
+        {related.length > 0 && (
+          <section className="hairline-t mt-4 py-16 md:py-20">
+            <SectionTitle
+              overline="More From Daleum"
+              title="함께 보면 좋은 상품"
+              action={{ href: "/products", label: "전체 보기" }}
+              className="mb-10"
+            />
+            <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-4">
+              {related.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </section>
+        )}
+      </div>
+    </div>
+  );
+}

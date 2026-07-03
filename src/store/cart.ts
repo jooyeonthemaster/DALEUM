@@ -15,6 +15,12 @@ export interface CartLine {
   imageUrl: string | null;
   qty: number;
   stock: number;
+  /**
+   * VIP 시크릿 캠페인(/vip/s/[token]) 경유로 담긴 라인이면 캠페인 id.
+   * 체크아웃에서 POST /api/orders items[].campaignId 로 그대로 전달해야
+   * 서버가 캠페인 지정가를 적용한다. (옵셔널 — 기존 저장분과 하위호환)
+   */
+  campaignId?: string | null;
 }
 
 interface CartState {
