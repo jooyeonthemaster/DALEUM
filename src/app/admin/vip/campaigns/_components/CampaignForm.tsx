@@ -445,7 +445,7 @@ export default function CampaignForm({ campaignId }: { campaignId?: string }) {
                       onClick={() => moveItem(i, -1)}
                       disabled={i === 0}
                       aria-label="위로 이동"
-                      className="p-0.5 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-30"
+                      className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-30"
                     >
                       <ArrowUp size={14} strokeWidth={1.5} />
                     </button>
@@ -454,7 +454,7 @@ export default function CampaignForm({ campaignId }: { campaignId?: string }) {
                       onClick={() => moveItem(i, 1)}
                       disabled={i === items.length - 1}
                       aria-label="아래로 이동"
-                      className="p-0.5 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-30"
+                      className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-30"
                     >
                       <ArrowDown size={14} strokeWidth={1.5} />
                     </button>

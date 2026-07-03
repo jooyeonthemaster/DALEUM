@@ -41,7 +41,7 @@ export default function AdminHeader({ adminName, onMenuClick, title }: AdminHead
           type="button"
           onClick={onMenuClick}
           aria-label="메뉴 열기"
-          className="-ml-1.5 p-1.5 text-ink-600 transition-colors hover:text-ink-900 lg:hidden"
+          className="-ml-2.5 p-2.5 text-ink-600 transition-colors hover:text-ink-900 lg:hidden"
         >
           <Menu size={20} strokeWidth={1.5} />
         </button>
@@ -59,7 +59,7 @@ export default function AdminHeader({ adminName, onMenuClick, title }: AdminHead
           type="button"
           onClick={handleLogout}
           disabled={signingOut}
-          className="inline-flex items-center gap-1.5 text-sm text-ink-600 transition-colors hover:text-forest-700 disabled:opacity-50"
+          className="inline-flex items-center gap-1.5 py-2 text-sm text-ink-600 transition-colors hover:text-forest-700 disabled:opacity-50"
         >
           <LogOut size={16} strokeWidth={1.5} />
           {signingOut ? "로그아웃 중…" : "로그아웃"}

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import SectionTitle from "@/components/shop/SectionTitle";
 import Accordion, { type AccordionItem } from "@/components/about/Accordion";
 import { createClient } from "@/lib/supabase/server";
@@ -201,10 +202,15 @@ export default async function SupportPage() {
       <div className="py-16 text-center md:py-24">
         <Reveal>
           <p className="label-caps text-forest-600">Customer Support</p>
-          <h1 className="headline-serif mt-6 text-3xl text-ink-900 md:text-[2.75rem]">
-            무엇을 도와드릴까요
-          </h1>
-          <p className="mx-auto mt-6 max-w-md text-[15px] leading-relaxed text-ink-500">
+        </Reveal>
+        <RevealText
+          as="h1"
+          text="무엇을 도와드릴까요"
+          delay={0.1}
+          className="headline-serif mt-6 block text-3xl text-ink-900 md:text-[2.75rem]"
+        />
+        <Reveal delay={0.3}>
+          <p className="mx-auto mt-6 max-w-md text-[15px] leading-relaxed text-pretty text-ink-500">
             공지사항과 자주 묻는 질문을 먼저 확인해 보세요.
             찾는 답이 없다면 언제든 연락 주시면 됩니다.
           </p>
@@ -212,22 +218,28 @@ export default async function SupportPage() {
       </div>
 
       {/* ---------- 섹션 내비 ---------- */}
-      <Reveal className="hairline-t hairline-b">
-        <nav aria-label="고객센터 섹션">
-          <ul className="flex items-center justify-center gap-8 py-5 md:gap-14">
-            {SECTION_NAV.map((item) => (
-              <li key={item.href}>
-                <a
-                  href={item.href}
-                  className="link-line label-caps text-ink-600 transition-colors hover:text-ink-900"
-                >
-                  {item.label}
-                </a>
-              </li>
-            ))}
-          </ul>
-        </nav>
-      </Reveal>
+      <div className="relative">
+        <Reveal variant="rule" className="absolute inset-x-0 top-0 h-px bg-ink-200" />
+        <Reveal variant="rule" delay={0.12} className="absolute inset-x-0 bottom-0 h-px bg-ink-200" />
+        <Reveal delay={0.15}>
+          <nav aria-label="고객센터 섹션">
+            <ul className="flex items-center justify-center gap-8 py-1.5 md:gap-14">
+              {SECTION_NAV.map((item) => (
+                <li key={item.href}>
+                  <a
+                    href={item.href}
+                    className="group label-caps inline-block py-4 text-ink-600 transition-colors hover:text-ink-900"
+                  >
+                    <span className="relative after:absolute after:left-0 after:-bottom-[3px] after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform after:duration-500 after:[transition-timing-function:var(--ease-hall)] group-hover:after:origin-left group-hover:after:scale-x-100">
+                      {item.label}
+                    </span>
+                  </a>
+                </li>
+              ))}
+            </ul>
+          </nav>
+        </Reveal>
+      </div>
 
       {/* ---------- 공지사항 ---------- */}
       <section id="notices" className="scroll-mt-28 pt-20 md:pt-28">
@@ -238,13 +250,24 @@ export default async function SupportPage() {
           {noticeItems.length > 0 ? (
             <Accordion items={noticeItems} />
           ) : (
-            <div className="hairline-t hairline-b py-16 text-center">
-              <p className="headline-serif text-lg text-ink-900">
+            <div className="relative py-16 text-center md:py-20">
+              <Reveal variant="rule" className="absolute inset-x-0 top-0 h-px bg-ink-200" />
+              <Reveal variant="rule" delay={0.1} className="absolute inset-x-0 bottom-0 h-px bg-ink-200" />
+              <p className="label-caps text-ink-400">Notice</p>
+              <p className="headline-serif mt-5 text-lg text-ink-900 md:text-xl">
                 등록된 공지사항이 아직 없습니다.
               </p>
-              <p className="mt-3 text-sm text-ink-500">
+              <p className="mt-3 text-sm text-pretty text-ink-500">
                 새로운 소식이 생기면 이곳에서 가장 먼저 알려드립니다.
               </p>
+              <a
+                href="#faq"
+                className="group label-caps mt-4 inline-block py-3.5 text-ink-600 transition-colors hover:text-ink-900"
+              >
+                <span className="relative after:absolute after:left-0 after:-bottom-[3px] after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform after:duration-500 after:[transition-timing-function:var(--ease-hall)] group-hover:after:origin-left group-hover:after:scale-x-100">
+                  자주 묻는 질문 보기
+                </span>
+              </a>
             </div>
           )}
         </Reveal>
@@ -266,8 +289,8 @@ export default async function SupportPage() {
           <SectionTitle overline="Contact" title="고객센터" className="mb-10" />
         </Reveal>
 
-        <Reveal delay={0.08} className="grid border border-ink-200 md:grid-cols-3">
-          <div className="border-b border-ink-200 p-8 md:border-r md:border-b-0 md:p-10">
+        <div className="grid border border-ink-200 md:grid-cols-3">
+          <Reveal delay={0.05} className="border-b border-ink-200 p-8 md:border-r md:border-b-0 md:p-10">
             <p className="label-caps text-ink-400">Tel</p>
             <a
               href={`tel:${COMPANY.tel.replace(/-/g, "")}`}
@@ -278,37 +301,41 @@ export default async function SupportPage() {
             <p className="krw mt-4 text-sm leading-relaxed text-ink-500">
               {COMPANY.csHours}
             </p>
-          </div>
+          </Reveal>
 
-          <div className="border-b border-ink-200 p-8 md:border-r md:border-b-0 md:p-10">
+          <Reveal delay={0.13} className="border-b border-ink-200 p-8 md:border-r md:border-b-0 md:p-10">
             <p className="label-caps text-ink-400">Email</p>
             <a
               href={`mailto:${COMPANY.email}`}
-              className="link-line mt-5 inline-block text-[15px] text-ink-900"
+              className="group mt-2 inline-block py-3 text-[15px] text-ink-900"
             >
-              {COMPANY.email}
+              <span className="relative after:absolute after:left-0 after:-bottom-[3px] after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform after:duration-500 after:[transition-timing-function:var(--ease-hall)] group-hover:after:origin-left group-hover:after:scale-x-100">
+                {COMPANY.email}
+              </span>
             </a>
-            <p className="mt-4 text-sm leading-relaxed text-ink-500">
+            <p className="mt-4 text-sm leading-relaxed text-pretty text-ink-500">
               교환·반품 접수는 상품 사진을 함께 보내주시면 더 빠르게
               처리됩니다.
             </p>
-          </div>
+          </Reveal>
 
-          <div className="p-8 md:p-10">
+          <Reveal delay={0.21} className="p-8 md:p-10">
             <p className="label-caps text-ink-400">Office</p>
             <p className="mt-5 text-[15px] leading-relaxed text-ink-900">
               {COMPANY.address}
             </p>
             <Link
               href="/about"
-              className="link-line label-caps mt-4 inline-block text-ink-600 transition-colors hover:text-ink-900"
+              className="group label-caps mt-1 inline-block py-3.5 text-ink-600 transition-colors hover:text-ink-900"
             >
-              오시는 길 보기
+              <span className="relative after:absolute after:left-0 after:-bottom-[3px] after:h-px after:w-full after:origin-right after:scale-x-0 after:bg-current after:transition-transform after:duration-500 after:[transition-timing-function:var(--ease-hall)] group-hover:after:origin-left group-hover:after:scale-x-100">
+                오시는 길 보기
+              </span>
             </Link>
-          </div>
-        </Reveal>
+          </Reveal>
+        </div>
 
-        <Reveal delay={0.14} className="mt-10 bg-cream-100 px-6 py-10 text-center md:py-12">
+        <Reveal variant="zoom" delay={0.1} className="mt-10 bg-cream-100 px-6 py-10 text-center md:py-12">
           <p className="headline-serif text-lg text-ink-900 md:text-xl">
             상담 시간이 지났나요?
           </p>

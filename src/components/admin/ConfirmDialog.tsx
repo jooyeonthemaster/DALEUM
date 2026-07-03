@@ -50,7 +50,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+            className="border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
           >
             취소
           </button>
@@ -58,7 +58,7 @@ export default function ConfirmDialog({
             type="button"
             onClick={handleConfirm}
             disabled={busy}
-            className={`px-4 py-2 text-sm text-cream-50 transition-colors disabled:opacity-50 ${
+            className={`px-4 py-2.5 text-sm text-cream-50 transition-colors disabled:opacity-50 ${
               danger
                 ? "bg-signal-red hover:bg-[#9c3c27]"
                 : "bg-forest-700 hover:bg-forest-800"

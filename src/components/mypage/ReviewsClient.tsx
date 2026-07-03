@@ -257,7 +257,7 @@ export default function ReviewsClient() {
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`-mb-px border-b-2 pb-3 text-sm transition-colors ${
+            className={`-mb-px border-b-2 pb-3.5 pt-3 text-sm transition-colors ${
               tab === t.key
                 ? "border-forest-700 font-medium text-ink-900"
                 : "border-transparent text-ink-500 hover:text-ink-900"
@@ -287,11 +287,12 @@ export default function ReviewsClient() {
         </div>
       ) : tab === "writable" ? (
         pending.length === 0 ? (
-          <div className="border-x border-b border-ink-200 px-6 py-16 text-center">
-            <p className="headline-serif text-lg text-ink-900">
+          <div className="border-x border-b border-ink-200 px-6 py-14 text-center md:py-16">
+            <span className="mx-auto mb-6 block h-8 w-px bg-ink-300" aria-hidden />
+            <p className="headline-serif text-balance text-lg text-ink-900 md:text-xl">
               지금 작성할 수 있는 리뷰가 없습니다.
             </p>
-            <p className="mt-3 text-sm leading-relaxed text-ink-500">
+            <p className="mx-auto mt-3 max-w-xs text-balance text-sm leading-relaxed text-ink-500">
               배송 완료된 주문의 상품에 리뷰를 남길 수 있습니다.
             </p>
           </div>
@@ -324,7 +325,7 @@ export default function ReviewsClient() {
                 <button
                   type="button"
                   onClick={() => openWrite(item)}
-                  className="shrink-0 border border-ink-900 px-4 py-2 text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
+                  className="flex min-h-11 shrink-0 items-center border border-ink-900 px-4 text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50 md:min-h-9"
                 >
                   리뷰 쓰기
                 </button>
@@ -333,9 +334,12 @@ export default function ReviewsClient() {
           </ul>
         )
       ) : written.length === 0 ? (
-        <div className="border-x border-b border-ink-200 px-6 py-16 text-center">
-          <p className="headline-serif text-lg text-ink-900">작성한 리뷰가 아직 없습니다.</p>
-          <p className="mt-3 text-sm leading-relaxed text-ink-500">
+        <div className="border-x border-b border-ink-200 px-6 py-14 text-center md:py-16">
+          <span className="mx-auto mb-6 block h-8 w-px bg-ink-300" aria-hidden />
+          <p className="headline-serif text-balance text-lg text-ink-900 md:text-xl">
+            작성한 리뷰가 아직 없습니다.
+          </p>
+          <p className="mx-auto mt-3 max-w-xs text-balance text-sm leading-relaxed text-ink-500">
             첫 리뷰로 발효 곤약의 경험을 나눠주세요.
           </p>
         </div>
@@ -377,11 +381,11 @@ export default function ReviewsClient() {
                     </p>
                   </div>
                 )}
-                <div className="mt-3 text-right">
+                <div className="mt-1.5 text-right">
                   <button
                     type="button"
                     onClick={() => setDeleting(review)}
-                    className="text-xs text-ink-400 transition-colors hover:text-signal-red"
+                    className="-mx-1 px-1 py-2.5 text-xs text-ink-400 transition-colors hover:text-signal-red"
                   >
                     삭제
                   </button>
@@ -403,7 +407,7 @@ export default function ReviewsClient() {
               type="button"
               onClick={closeWrite}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               취소
             </button>
@@ -411,7 +415,7 @@ export default function ReviewsClient() {
               type="button"
               onClick={submit}
               disabled={busy}
-              className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+              className="h-11 bg-forest-700 px-5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
               {busy ? "등록 중…" : "등록하기"}
             </button>
@@ -483,7 +487,7 @@ export default function ReviewsClient() {
               type="button"
               onClick={() => setDeleting(null)}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               취소
             </button>
@@ -491,7 +495,7 @@ export default function ReviewsClient() {
               type="button"
               onClick={removeReview}
               disabled={busy}
-              className="bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
+              className="h-11 bg-signal-red px-5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
             >
               {busy ? "삭제 중…" : "삭제"}
             </button>

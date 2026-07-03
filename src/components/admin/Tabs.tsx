@@ -18,7 +18,7 @@ export default function Tabs({ tabs, active, onChange, className = "" }: TabsPro
   return (
     <div
       role="tablist"
-      className={`flex gap-6 overflow-x-auto border-b border-ink-200 ${className}`}
+      className={`flex gap-6 overflow-x-auto border-b border-ink-200 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden ${className}`}
     >
       {tabs.map((tab) => {
         const isActive = tab.key === active;
@@ -29,7 +29,7 @@ export default function Tabs({ tabs, active, onChange, className = "" }: TabsPro
             role="tab"
             aria-selected={isActive}
             onClick={() => onChange(tab.key)}
-            className={`relative shrink-0 pb-3 pt-1 text-sm transition-colors ${
+            className={`relative shrink-0 pb-3 pt-2 text-sm transition-colors ${
               isActive ? "font-semibold text-ink-900" : "text-ink-400 hover:text-ink-700"
             }`}
           >

@@ -8,6 +8,8 @@ import { createServiceClient } from "@/lib/supabase/service";
 import { formatDate } from "@/lib/format";
 import type { VipCampaign, VipCampaignItem } from "@/lib/types";
 import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
+import Parallax from "@/components/shop/Parallax";
 import VipProductCard from "@/components/vip/VipProductCard";
 import CampaignGate from "@/components/vip/CampaignGate";
 import CampaignViewTracker from "@/components/vip/CampaignViewTracker";
@@ -30,18 +32,30 @@ function StatusScreen({
   children?: ReactNode;
 }) {
   return (
-    <section className="relative flex flex-1 flex-col items-center justify-center bg-forest-950 px-6 py-32 text-center">
+    <section className="relative flex flex-1 flex-col items-center justify-center bg-forest-950 px-6 py-20 text-center md:py-32">
       <div aria-hidden className="pointer-events-none absolute inset-3 border border-cream-50/10 md:inset-5" />
       <div className="relative w-full max-w-md">
-        <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
-        <p className="label-caps text-brass-300/90">Private Invitation</p>
-        <h1 className="headline-serif mt-5 text-2xl leading-snug text-cream-50 md:text-3xl">
-          {title}
-        </h1>
-        <p className="mt-5 text-sm leading-relaxed text-cream-200/55">{description}</p>
-        <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
-          {children}
-        </div>
+        <Reveal>
+          <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
+        </Reveal>
+        <Reveal delay={0.12}>
+          <p className="label-caps text-brass-300/90">Private Invitation</p>
+        </Reveal>
+        <RevealText
+          as="h1"
+          delay={0.28}
+          stagger={0.08}
+          text={title}
+          className="headline-serif mt-5 block text-balance text-2xl leading-snug text-cream-50 md:text-3xl"
+        />
+        <Reveal variant="blur" delay={0.7}>
+          <p className="mt-5 text-sm leading-relaxed text-cream-200/55">{description}</p>
+        </Reveal>
+        <Reveal delay={0.9}>
+          <div className="mt-10 flex flex-col items-center justify-center gap-3 sm:flex-row">
+            {children}
+          </div>
+        </Reveal>
       </div>
     </section>
   );
@@ -164,77 +178,119 @@ export default async function CampaignPage({
     <>
       <CampaignViewTracker campaignId={campaign.id} token={token} />
 
-      {/* 히어로 — 풀블리드 */}
+      {/* 히어로 — 풀블리드, 커튼이 걷히고 스크롤에 은은히 흐르는 패럴랙스 */}
       {campaign.hero_image_url && (
-        <div className="relative h-[52vh] min-h-80 w-full md:h-[64vh]">
-          <Image
-            src={campaign.hero_image_url}
-            alt=""
-            fill
-            priority
-            sizes="100vw"
-            className="object-cover"
-          />
-          {/* 다크 살롱으로 가라앉는 스크림 */}
-          <div
-            aria-hidden
-            className="absolute inset-0 bg-gradient-to-b from-forest-950/25 via-forest-950/10 to-forest-950"
-          />
-        </div>
+        <Reveal variant="clip">
+          <div className="relative h-[52vh] min-h-80 w-full overflow-hidden bg-forest-900 md:h-[64vh]">
+            <Parallax speed={50} className="absolute inset-0">
+              <Image
+                src={campaign.hero_image_url}
+                alt=""
+                fill
+                priority
+                sizes="100vw"
+                className="scale-110 object-cover"
+              />
+            </Parallax>
+            {/* 다크 살롱으로 가라앉는 스크림 */}
+            <div
+              aria-hidden
+              className="absolute inset-0 bg-gradient-to-b from-forest-950/25 via-forest-950/10 to-forest-950"
+            />
+          </div>
+        </Reveal>
       )}
 
-      {/* 초대장 본문 — 손편지 레이아웃 */}
+      {/* 초대장 본문 — 봉투가 열리듯: 오너먼트 → 라벨 → 타이틀 어절 → 헤어라인 → 인사말 블러 */}
       <section className="container-hall">
-        <Reveal className={`mx-auto max-w-2xl text-center ${campaign.hero_image_url ? "pt-12 md:pt-16" : "pt-20 md:pt-28"} pb-14 md:pb-20`}>
-          <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
-          <p className="label-caps text-brass-300">Private Invitation</p>
-          <h1 className="headline-serif mt-6 text-3xl leading-snug text-cream-50 md:text-[2.75rem]">
-            {campaign.title}
-          </h1>
+        <div className={`mx-auto max-w-2xl text-center ${campaign.hero_image_url ? "pt-12 md:pt-16" : "pt-16 md:pt-28"} pb-14 md:pb-20`}>
+          <Reveal>
+            <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
+          </Reveal>
+          <Reveal delay={0.12}>
+            <p className="label-caps text-brass-300">Private Invitation</p>
+          </Reveal>
+          <RevealText
+            as="h1"
+            delay={0.3}
+            stagger={0.09}
+            text={campaign.title}
+            className="headline-serif mt-6 block text-balance text-3xl leading-snug text-cream-50 md:text-[2.75rem]"
+          />
 
           {campaign.message && (
-            <div className="mx-auto mt-12 max-w-xl border-y border-cream-50/10 px-2 py-10 md:py-12">
-              <p className="whitespace-pre-line font-serif text-[15px] font-normal leading-loose text-cream-100/85 [word-break:keep-all] md:text-base">
-                {campaign.message}
-              </p>
-              <p className="label-caps mt-10 text-cream-50/35">Daleum</p>
+            <div className="mx-auto mt-12 max-w-xl px-2">
+              <Reveal variant="rule" delay={0.55} className="h-px w-full bg-cream-50/10" />
+              <Reveal variant="blur" delay={0.7}>
+                <div className="py-10 md:py-12">
+                  {/* 줄 단위로 나눠 각 줄을 text-balance — pre-line 강제 개행이 있으면
+                      Chromium이 balance를 포기해 한 단어 고아가 생긴다 */}
+                  <p className="font-serif text-[15px] font-normal leading-loose text-cream-100/85 [word-break:keep-all] md:text-base">
+                    {campaign.message.split("\n").map((line, i) =>
+                      line.trim() ? (
+                        <span key={i} className="block text-balance">
+                          {line}
+                        </span>
+                      ) : (
+                        <span key={i} aria-hidden className="block h-4" />
+                      )
+                    )}
+                  </p>
+                  <p className="label-caps mt-10 text-cream-50/35">Daleum</p>
+                </div>
+              </Reveal>
+              <Reveal variant="rule" delay={0.85} className="h-px w-full bg-cream-50/10" />
             </div>
           )}
 
           {campaign.expires_at && (
-            <p className="krw mt-8 text-xs tracking-wide text-cream-50/40">
-              {formatDate(campaign.expires_at)}까지 유효한 초대입니다.
-            </p>
+            <Reveal delay={campaign.message ? 1.0 : 0.6}>
+              <p className="krw mt-8 text-xs tracking-wide text-cream-50/50">
+                {formatDate(campaign.expires_at)}까지 유효한 초대입니다.
+              </p>
+            </Reveal>
           )}
-        </Reveal>
+        </div>
       </section>
 
+      {/* 헤어라인 — 초대장과 셀렉션 사이 */}
+      <div className="container-hall">
+        <Reveal variant="rule" className="h-px w-full bg-cream-50/10" />
+      </div>
+
       {/* 큐레이션 상품 */}
-      <section className="container-hall border-t border-cream-50/10 pb-24 pt-12 md:pb-32 md:pt-16">
+      <section className="container-hall pb-24 pt-12 md:pb-32 md:pt-16">
         {items.length === 0 ? (
-          <div className="py-20 text-center">
+          <Reveal className="py-16 text-center md:py-20">
             <h2 className="headline-serif text-xl text-cream-50 md:text-2xl">
               셀렉션을 준비하고 있습니다.
             </h2>
             <p className="mt-4 text-sm text-cream-200/55">
               잠시 후 다시 열어봐 주세요.
             </p>
-          </div>
+          </Reveal>
         ) : (
           <>
-            <Reveal className="mb-10 md:mb-14">
-              <p className="label-caps text-brass-300">Curated For You</p>
-              <h2 className="headline-serif mt-4 text-2xl text-cream-50 md:text-3xl">
-                이번 초대를 위해 준비한 셀렉션
-              </h2>
-            </Reveal>
+            <div className="mb-10 md:mb-14">
+              <Reveal>
+                <p className="label-caps text-brass-300">Curated For You</p>
+              </Reveal>
+              <RevealText
+                as="h2"
+                delay={0.15}
+                stagger={0.07}
+                text="이번 초대를 위해 준비한 셀렉션"
+                className="headline-serif mt-4 block text-balance text-2xl text-cream-50 md:text-3xl"
+              />
+            </div>
             <div className="grid grid-cols-2 gap-x-3 gap-y-12 md:grid-cols-3 md:gap-x-4">
               {items.map((item, i) => {
                 const product = item.products!;
                 // 서버 과금 규칙과 동일하게 표시가도 정상가를 넘지 않도록
                 const price = Math.min(item.custom_price, product.price);
+                const delay = (i % 3) * 0.08;
                 return (
-                  <Reveal key={item.id} delay={(i % 3) * 0.06}>
+                  <Reveal key={item.id} delay={delay}>
                     <VipProductCard
                       product={product}
                       price={price}
@@ -242,6 +298,8 @@ export default async function CampaignPage({
                       markLabel="Invitation"
                       campaignId={campaign.id}
                       priority={!campaign.hero_image_url && i < 3}
+                      revealImage
+                      revealDelay={delay + 0.1}
                     />
                   </Reveal>
                 );

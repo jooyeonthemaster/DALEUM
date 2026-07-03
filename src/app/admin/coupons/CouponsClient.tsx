@@ -214,7 +214,7 @@ export default function CouponsClient() {
         <button
           type="button"
           onClick={openCreate}
-          className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800"
+          className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
         >
           새 쿠폰
         </button>

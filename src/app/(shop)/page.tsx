@@ -140,13 +140,13 @@ export default async function HomePage() {
       {/* 4. 베스트 셀렉션 */}
       {featured.length > 0 && (
         <section className="hairline-t">
-          <div className="container-hall py-24 md:py-32">
+          <div className="container-hall py-16 md:py-28">
             <Reveal>
               <SectionTitle
                 overline="Seasonal Selection"
                 title="이 계절의 식탁"
                 action={{ href: "/products", label: "전체 보기" }}
-                className="mb-10 md:mb-14"
+                className="mb-8 md:mb-12"
               />
             </Reveal>
             <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-4">

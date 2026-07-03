@@ -40,7 +40,7 @@ export default function CategoryTabs({
               <Link
                 href={hrefOf(item.slug, sort)}
                 aria-current={active ? "page" : undefined}
-                className={`relative block pb-3.5 text-sm transition-colors ${
+                className={`relative block pb-3.5 pt-2.5 text-sm transition-colors ${
                   active
                     ? "font-medium text-ink-900"
                     : "text-ink-400 hover:text-ink-700"

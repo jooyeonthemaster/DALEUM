@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useSyncExternalStore, type FormEvent, type ReactNode } from "react";
+import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 
 export interface CampaignGateProps {
   /** 캠페인 토큰 — 세션 스토리지 기억 키로 사용 */
@@ -82,22 +84,34 @@ export default function CampaignGate({ token, codeHash, children }: CampaignGate
   if (unlocked) return <>{children}</>;
 
   return (
-    <section className="flex flex-1 flex-col items-center justify-center px-6 py-32 text-center">
+    <section className="flex flex-1 flex-col items-center justify-center px-6 py-20 text-center md:py-32">
       <div
         className={`w-full max-w-md transition-opacity duration-700 ease-hall ${
           checking ? "opacity-0" : "opacity-100"
         }`}
       >
-        <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
-        <p className="label-caps text-brass-300">Private Invitation</p>
-        <h1 className="headline-serif mt-4 text-2xl text-cream-50 md:text-3xl">
-          코드로 보호된 초대장입니다.
-        </h1>
-        <p className="mt-4 text-sm text-cream-200/55">
-          초대장과 함께 전달받으신 코드를 입력해 주세요.
-        </p>
+        {/* 봉인된 초대장 — 오너먼트 → 라벨 → 타이틀 → 안내 → 코드 인풋 순서로 깨어난다 */}
+        <Reveal>
+          <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
+        </Reveal>
+        <Reveal delay={0.12}>
+          <p className="label-caps text-brass-300">Private Invitation</p>
+        </Reveal>
+        <RevealText
+          as="h1"
+          delay={0.28}
+          stagger={0.09}
+          text="코드로 보호된 초대장입니다."
+          className="headline-serif mt-4 block text-balance text-2xl text-cream-50 md:text-3xl"
+        />
+        <Reveal variant="blur" delay={0.7}>
+          <p className="mt-4 text-sm text-cream-200/55">
+            초대장과 함께 전달받으신 코드를 입력해 주세요.
+          </p>
+        </Reveal>
 
-        <form onSubmit={handleSubmit} className="mt-10">
+        <Reveal delay={0.9}>
+          <form onSubmit={handleSubmit} className="mt-10">
           <label htmlFor="campaign-code" className="sr-only">
             초대 코드
           </label>
@@ -130,7 +144,8 @@ export default function CampaignGate({ token, codeHash, children }: CampaignGate
           >
             {pending ? "확인 중" : "초대장 열기"}
           </button>
-        </form>
+          </form>
+        </Reveal>
       </div>
     </section>
   );

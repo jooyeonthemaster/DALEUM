@@ -272,7 +272,7 @@ export default function ReviewsClient() {
               type="button"
               onClick={saveReply}
               disabled={saving}
-              className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+              className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
               {saving ? "저장 중…" : "답글 저장"}
             </button>

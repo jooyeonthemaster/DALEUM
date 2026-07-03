@@ -13,13 +13,15 @@ const ITEMS = [
 
 /**
  * 마이페이지 내비 — 데스크톱은 좌측 세로 목록, 모바일은 상단 가로 스크롤 탭.
+ * min-w-0: 그리드 아이템의 최소 크기가 탭 목록의 고유 폭으로 잡혀
+ * 모바일에서 가로 스크롤이 생기는 것을 방지한다.
  */
 export default function MypageNav() {
   const pathname = usePathname();
 
   return (
-    <nav aria-label="마이페이지 메뉴" className="lg:sticky lg:top-28 lg:self-start">
-      <ul className="flex gap-6 overflow-x-auto border-b border-ink-200 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block lg:space-y-1 lg:border-b-0">
+    <nav aria-label="마이페이지 메뉴" className="min-w-0 lg:sticky lg:top-28 lg:self-start">
+      <ul className="flex gap-6 overflow-x-auto border-b border-ink-200 pr-4 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:block lg:space-y-1 lg:border-b-0 lg:pr-0">
         {ITEMS.map((item) => {
           const active = pathname.startsWith(item.href);
           return (
@@ -27,7 +29,7 @@ export default function MypageNav() {
               <Link
                 href={item.href}
                 aria-current={active ? "page" : undefined}
-                className={`block whitespace-nowrap border-b-2 pb-3 text-sm transition-colors duration-300 lg:border-b-0 lg:border-l-2 lg:py-2 lg:pb-2 lg:pl-5 ${
+                className={`block whitespace-nowrap border-b-2 pb-3.5 pt-3 text-sm transition-colors duration-300 lg:border-b-0 lg:border-l-2 lg:py-2 lg:pl-5 ${
                   active
                     ? "border-forest-700 font-medium text-ink-900"
                     : "border-transparent text-ink-500 hover:text-ink-900 lg:border-ink-100"

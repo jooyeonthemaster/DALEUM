@@ -5,6 +5,7 @@ import type { ProductWithImages } from "@/lib/types";
 import ProductCard from "@/components/shop/ProductCard";
 import EmptyState from "@/components/shop/EmptyState";
 import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import CategoryTabs, { type CategoryTabItem } from "@/components/catalog/CategoryTabs";
 import SortSelect from "@/components/catalog/SortSelect";
 import { parseSortKey, type SortKey } from "@/components/catalog/sort";
@@ -126,48 +127,61 @@ export default async function ProductsPage({
   ];
 
   return (
-    <div className="container-hall pb-24 pt-10 md:pb-32 md:pt-16">
+    <div className="container-hall pb-16 pt-10 md:pb-28 md:pt-16">
       {/* 타이틀 */}
-      <p className="label-caps text-forest-600">Fermented Konjac Collection</p>
-      <h1 className="headline-serif mt-3 text-3xl text-ink-900 md:text-4xl">
-        {activeCategory ? activeCategory.name : "전체 상품"}
-      </h1>
+      <Reveal variant="fade">
+        <p className="label-caps text-forest-600">Fermented Konjac Collection</p>
+      </Reveal>
+      <RevealText
+        as="h1"
+        delay={0.06}
+        className="headline-serif mt-3 block text-3xl text-ink-900 md:text-4xl"
+        text={activeCategory ? activeCategory.name : "전체 상품"}
+      />
       {activeCategory?.description && (
-        <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-500">
-          {activeCategory.description}
-        </p>
+        <Reveal variant="fade" delay={0.14}>
+          <p className="mt-3 max-w-xl text-sm leading-relaxed text-ink-500">
+            {activeCategory.description}
+          </p>
+        </Reveal>
       )}
 
       {/* 카테고리 탭 */}
-      <div className="hairline-b mt-10">
+      <Reveal variant="fade" delay={0.18} className="hairline-b mt-8 md:mt-10">
         <CategoryTabs
           items={tabItems}
           activeSlug={activeCategory?.slug ?? null}
           sort={sort}
         />
-      </div>
+      </Reveal>
 
       {/* 개수 + 정렬 */}
-      <div className="mt-5 flex items-center justify-between gap-4">
+      <Reveal
+        variant="fade"
+        delay={0.24}
+        className="mt-3 flex items-center justify-between gap-4"
+      >
         <p className="krw text-[13px] text-ink-500">총 {total}개의 상품</p>
         <SortSelect sort={sort} category={activeCategory?.slug ?? null} />
-      </div>
+      </Reveal>
 
       {/* 상품 그리드 */}
       {products.length === 0 ? (
-        <EmptyState
-          title="아직 준비된 상품이 없습니다."
-          description="곧 새로운 상품으로 찾아뵙겠습니다. 다른 카테고리도 둘러보세요."
-          action={
-            activeCategory
-              ? { href: "/products", label: "전체 상품 보기" }
-              : undefined
-          }
-        />
+        <Reveal variant="fade" delay={0.2}>
+          <EmptyState
+            title="아직 준비된 상품이 없습니다."
+            description="곧 새로운 상품으로 찾아뵙겠습니다. 다른 카테고리도 둘러보세요."
+            action={
+              activeCategory
+                ? { href: "/products", label: "전체 상품 보기" }
+                : undefined
+            }
+          />
+        </Reveal>
       ) : (
         <div className="mt-8 grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-3 md:gap-x-4 xl:grid-cols-4">
           {products.map((product, i) => (
-            <Reveal key={product.id} delay={(i % 4) * 0.06}>
+            <Reveal key={product.id} delay={(i % 4) * 0.07}>
               <ProductCard product={product} priority={page === 1 && i < 4} />
             </Reveal>
           ))}

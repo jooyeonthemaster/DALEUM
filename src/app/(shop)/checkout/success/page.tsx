@@ -7,6 +7,8 @@ import { krw, formatPhone } from "@/lib/format";
 import { COMPANY } from "@/lib/constants";
 import type { OrdererInfo, RecipientInfo } from "@/lib/types";
 import PurchaseComplete from "@/components/checkout/PurchaseComplete";
+import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 
 export const metadata: Metadata = {
   title: "주문 완료",
@@ -177,24 +179,35 @@ export default async function CheckoutSuccessPage({
     <div className="container-hall flex flex-1 flex-col items-center py-20 text-center md:py-28">
       <PurchaseComplete orderId={order.id} orderNo={order.order_no} amount={order.total} />
 
-      <span className="mb-8 block h-10 w-px bg-ink-200" aria-hidden />
-      <p className="label-caps text-forest-600">Order Complete</p>
-      <h1 className="headline-serif mt-4 text-3xl text-ink-900 md:text-4xl">감사합니다.</h1>
-      <p className="mt-4 max-w-md text-sm leading-relaxed text-ink-500">
+      <Reveal variant="fade">
+        <span className="mx-auto mb-8 block h-10 w-px bg-ink-200" aria-hidden />
+        <p className="label-caps text-forest-600">Order Complete</p>
+      </Reveal>
+      <RevealText
+        as="h1"
+        text="감사합니다."
+        delay={0.15}
+        className="headline-serif mt-4 text-3xl text-ink-900 md:text-4xl"
+      />
+      <Reveal as="p" variant="fade" delay={0.25} className="mt-4 max-w-md text-sm leading-relaxed text-ink-500">
         주문이 정상적으로 완료되었습니다.
         <br />
         정성껏 준비해 신선하게 보내드리겠습니다.
-      </p>
+      </Reveal>
 
-      <div className="mt-10">
+      <Reveal variant="fade" delay={0.35} className="mt-10">
         <p className="label-caps text-ink-400">주문번호</p>
         <p className="krw mt-1.5 text-xl font-semibold tracking-wide text-ink-900">
           {order.order_no}
         </p>
-      </div>
+      </Reveal>
 
       {/* ---------- 주문 요약 ---------- */}
-      <div className="mt-10 w-full max-w-lg border border-ink-200 text-left text-sm">
+      <Reveal
+        variant="fade"
+        delay={0.45}
+        className="mt-10 w-full max-w-lg border border-ink-200 text-left text-sm"
+      >
         <div className="flex gap-6 border-b border-ink-100 px-5 py-4">
           <p className="w-16 shrink-0 text-ink-400">주문 상품</p>
           <p className="text-ink-900">{itemsLabel}</p>
@@ -240,16 +253,25 @@ export default async function CheckoutSuccessPage({
             <dd className="krw text-lg font-semibold text-ink-900">{krw(order.total)}원</dd>
           </div>
         </dl>
-      </div>
+      </Reveal>
 
       {!isMine && (
-        <p className="mt-6 max-w-md text-xs leading-relaxed text-ink-400">
+        <Reveal
+          as="p"
+          variant="fade"
+          delay={0.5}
+          className="mt-6 max-w-md text-xs leading-relaxed text-ink-400"
+        >
           비회원 주문은 주문번호와 주문자 연락처로 조회·취소하실 수 있습니다. 주문번호를 꼭
           보관해 주세요. 문의: {COMPANY.tel} ({COMPANY.csHours})
-        </p>
+        </Reveal>
       )}
 
-      <div className="mt-12 flex flex-col items-center gap-3 sm:flex-row">
+      <Reveal
+        variant="fade"
+        delay={0.55}
+        className="mt-12 flex flex-col items-center gap-3 sm:flex-row"
+      >
         {isMine && (
           <Link
             href={`/mypage/orders/${order.id}`}
@@ -264,7 +286,7 @@ export default async function CheckoutSuccessPage({
         >
           계속 쇼핑하기
         </Link>
-      </div>
+      </Reveal>
     </div>
   );
 }
@@ -282,12 +304,22 @@ function FailureView({
   actions: { href: string; label: string }[];
 }) {
   return (
-    <div className="container-hall flex flex-1 flex-col items-center py-24 text-center md:py-32">
-      <span className="mb-8 block h-10 w-px bg-ink-200" aria-hidden />
-      <h1 className="headline-serif max-w-md text-2xl text-ink-900 md:text-3xl">{title}</h1>
-      <p className="mt-4 max-w-md text-sm leading-relaxed text-signal-red">{description}</p>
-      {note && <p className="mt-3 max-w-md text-sm leading-relaxed text-ink-500">{note}</p>}
-      <div className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
+    <div className="container-hall flex flex-1 flex-col items-center py-20 text-center md:py-28">
+      <Reveal variant="fade" className="flex flex-col items-center">
+        <span className="mb-8 block h-10 w-px bg-ink-200" aria-hidden />
+        <h1 className="headline-serif max-w-md text-balance text-2xl text-ink-900 md:text-3xl">
+          {title}
+        </h1>
+        <p className="mt-4 max-w-md text-balance text-sm leading-relaxed text-signal-red">
+          {description}
+        </p>
+        {note && (
+          <p className="mt-3 max-w-md text-balance text-sm leading-relaxed text-ink-500">
+            {note}
+          </p>
+        )}
+      </Reveal>
+      <Reveal variant="fade" delay={0.15} className="mt-10 flex flex-col items-center gap-3 sm:flex-row">
         {actions.map((a, i) => (
           <Link
             key={a.href}
@@ -301,7 +333,7 @@ function FailureView({
             {a.label}
           </Link>
         ))}
-      </div>
+      </Reveal>
     </div>
   );
 }

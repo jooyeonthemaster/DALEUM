@@ -155,7 +155,7 @@ export default function DashboardClient() {
         <button
           type="button"
           onClick={retry}
-          className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100"
+          className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100"
         >
           다시 불러오기
         </button>

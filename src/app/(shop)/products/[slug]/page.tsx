@@ -15,7 +15,10 @@ import type {
 } from "@/lib/types";
 import ProductCard from "@/components/shop/ProductCard";
 import SectionTitle from "@/components/shop/SectionTitle";
+import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import Gallery from "@/components/catalog/Gallery";
+import DescriptionBlock from "@/components/catalog/DescriptionBlock";
 import AddToCart, {
   type PurchaseOption,
   type SpecRow,
@@ -315,36 +318,41 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
           <div className="lg:sticky lg:top-28 lg:self-start">
             {product.categories && (
-              <Link
-                href={`/products?category=${product.categories.slug}`}
-                className="label-caps text-forest-600 transition-colors hover:text-forest-800"
-              >
-                {product.categories.name}
-              </Link>
+              <Reveal variant="fade">
+                <Link
+                  href={`/products?category=${product.categories.slug}`}
+                  className="label-caps text-forest-600 transition-colors hover:text-forest-800"
+                >
+                  {product.categories.name}
+                </Link>
+              </Reveal>
             )}
-            <h1 className="headline-serif mt-3 text-[1.7rem] text-ink-900 md:text-3xl">
-              {product.name}
-            </h1>
-            {product.subtitle && (
-              <p className="mt-2.5 text-[15px] text-ink-500">{product.subtitle}</p>
-            )}
-            {product.badges.length > 0 && (
-              <div className="mt-4 flex flex-wrap gap-1.5">
-                {product.badges.map((badge) => (
-                  <span
-                    key={badge}
-                    className="label-caps rounded-full border border-ink-200 px-2.5 py-1 text-[9px] text-ink-600"
-                  >
-                    {badge}
-                  </span>
-                ))}
-              </div>
-            )}
-            {product.description && (
-              <p className="mt-5 text-sm leading-relaxed text-ink-600">
-                {product.description}
-              </p>
-            )}
+            <RevealText
+              as="h1"
+              delay={0.06}
+              className="headline-serif mt-3 block text-[1.7rem] text-ink-900 md:text-3xl"
+              text={product.name}
+            />
+            <Reveal variant="fade" delay={0.16}>
+              {product.subtitle && (
+                <p className="mt-2.5 text-[15px] text-ink-500">{product.subtitle}</p>
+              )}
+              {product.badges.length > 0 && (
+                <div className="mt-4 flex flex-wrap gap-1.5">
+                  {product.badges.map((badge) => (
+                    <span
+                      key={badge}
+                      className="label-caps rounded-full border border-ink-200 px-2.5 py-1 text-[9px] text-ink-600"
+                    >
+                      {badge}
+                    </span>
+                  ))}
+                </div>
+              )}
+              {product.description && (
+                <DescriptionBlock text={product.description} className="mt-5" />
+              )}
+            </Reveal>
 
             <AddToCart
               className="mt-8"
@@ -378,45 +386,74 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
         <div className="mx-auto mt-20 max-w-3xl md:mt-28">
           {/* 에디토리얼 스토리 */}
           {product.story && (
-            <section className="hairline-t py-14 md:py-16">
-              <p className="label-caps text-center text-forest-600">Story</p>
-              <h2 className="headline-serif mt-3 text-center text-2xl text-ink-900">
-                다름이 빚은 이야기
-              </h2>
-              <StoryBlock story={product.story} className="mt-10" />
+            <section>
+              <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+              <div className="py-14 md:py-16">
+                <Reveal variant="fade">
+                  <p className="label-caps text-center text-forest-600">Story</p>
+                </Reveal>
+                <RevealText
+                  as="h2"
+                  delay={0.08}
+                  className="headline-serif mt-3 block text-center text-2xl text-ink-900"
+                  text="다름이 빚은 이야기"
+                />
+                <Reveal variant="blur" delay={0.18}>
+                  <StoryBlock story={product.story} className="mt-10" />
+                </Reveal>
+              </div>
             </section>
           )}
 
           {/* 영양 정보 */}
           {hasNutrition && (
-            <section className="hairline-t py-14 md:py-16">
-              <SectionTitle
-                overline="Nutrition"
-                title="영양 정보"
-                className="mb-8"
-              />
-              <SpecTable data={product.nutrition} columns={2} />
+            <section>
+              <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+              <div className="py-14 md:py-16">
+                <Reveal variant="fade">
+                  <SectionTitle
+                    overline="Nutrition"
+                    title="영양 정보"
+                    className="mb-8"
+                  />
+                </Reveal>
+                <Reveal variant="fade" delay={0.12}>
+                  <SpecTable data={product.nutrition} columns={2} />
+                </Reveal>
+              </div>
             </section>
           )}
 
           {/* 상세 스펙 */}
-          <section className="hairline-t py-14 md:py-16">
-            <SectionTitle
-              overline="Details"
-              title="상세 정보"
-              className="mb-8"
-            />
-            <SpecTable data={detailSpecs} />
+          <section>
+            <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+            <div className="py-14 md:py-16">
+              <Reveal variant="fade">
+                <SectionTitle
+                  overline="Details"
+                  title="상세 정보"
+                  className="mb-8"
+                />
+              </Reveal>
+              <Reveal variant="fade" delay={0.12}>
+                <SpecTable data={detailSpecs} />
+              </Reveal>
+            </div>
           </section>
 
           {/* 배송 안내 */}
-          <section className="hairline-t py-14 md:py-16">
-            <SectionTitle
-              overline="Delivery"
-              title="배송 안내"
-              className="mb-8"
-            />
-            <dl className="hairline-t">
+          <section>
+            <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+            <div className="py-14 md:py-16">
+              <Reveal variant="fade">
+                <SectionTitle
+                  overline="Delivery"
+                  title="배송 안내"
+                  className="mb-8"
+                />
+              </Reveal>
+              <Reveal variant="fade" delay={0.12}>
+              <dl className="hairline-t">
               <div className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-3">
                 <dt className="shrink-0 text-sm text-ink-500">배송비</dt>
                 <dd className="krw text-right text-sm text-ink-900">
@@ -443,59 +480,80 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                   있습니다.
                 </dd>
               </div>
-            </dl>
-            <p className="mt-5 text-[13px] leading-relaxed text-ink-400">
-              배송 관련 문의는 고객센터 {COMPANY.tel} ({COMPANY.csHours})로
-              연락해 주세요.
-            </p>
+              </dl>
+              <p className="mt-5 text-[13px] leading-relaxed text-ink-400">
+                배송 관련 문의는 고객센터 {COMPANY.tel} ({COMPANY.csHours})로
+                연락해 주세요.
+              </p>
+              </Reveal>
+            </div>
           </section>
 
           {/* 리뷰 */}
-          <section id="reviews" className="hairline-t py-14 md:py-16">
-            <SectionTitle
-              overline="Reviews"
-              title={`고객 리뷰${reviews.length > 0 ? ` (${reviews.length})` : ""}`}
-              className="mb-10"
-            />
-            <ReviewsSection
-              productId={product.id}
-              reviews={reviews}
-              isLoggedIn={user != null}
-              alreadyReviewed={alreadyReviewed}
-              orderItemId={orderItemId}
-              loginNext={loginNext}
-            />
+          <section id="reviews">
+            <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+            <div className="py-14 md:py-16">
+              <Reveal variant="fade">
+                <SectionTitle
+                  overline="Reviews"
+                  title={`고객 리뷰${reviews.length > 0 ? ` (${reviews.length})` : ""}`}
+                  className="mb-10"
+                />
+              </Reveal>
+              <ReviewsSection
+                productId={product.id}
+                reviews={reviews}
+                isLoggedIn={user != null}
+                alreadyReviewed={alreadyReviewed}
+                orderItemId={orderItemId}
+                loginNext={loginNext}
+              />
+            </div>
           </section>
 
           {/* 상품 문의 */}
-          <section id="inquiries" className="hairline-t py-14 md:py-16">
-            <SectionTitle
-              overline="Q&amp;A"
-              title={`상품 문의${inquiries.length > 0 ? ` (${inquiries.length})` : ""}`}
-              className="mb-10"
-            />
-            <InquiriesSection
-              productId={product.id}
-              inquiries={inquiries}
-              isLoggedIn={user != null}
-              loginNext={loginNext}
-            />
+          <section id="inquiries">
+            <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+            <div className="py-14 md:py-16">
+              <Reveal variant="fade">
+                <SectionTitle
+                  overline="Q&amp;A"
+                  title={`상품 문의${inquiries.length > 0 ? ` (${inquiries.length})` : ""}`}
+                  className="mb-10"
+                />
+              </Reveal>
+              <Reveal variant="fade" delay={0.1}>
+                <InquiriesSection
+                  productId={product.id}
+                  inquiries={inquiries}
+                  isLoggedIn={user != null}
+                  loginNext={loginNext}
+                />
+              </Reveal>
+            </div>
           </section>
         </div>
 
         {/* ---------- 관련 상품 ---------- */}
         {related.length > 0 && (
-          <section className="hairline-t mt-4 py-16 md:py-20">
-            <SectionTitle
-              overline="More From Daleum"
-              title="함께 보면 좋은 상품"
-              action={{ href: "/products", label: "전체 보기" }}
-              className="mb-10"
-            />
-            <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-4">
-              {related.map((p) => (
-                <ProductCard key={p.id} product={p} />
-              ))}
+          <section className="mt-4">
+            <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+            <div className="py-16 md:py-20">
+              <Reveal variant="fade">
+                <SectionTitle
+                  overline="More From Daleum"
+                  title="함께 보면 좋은 상품"
+                  action={{ href: "/products", label: "전체 보기" }}
+                  className="mb-10"
+                />
+              </Reveal>
+              <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-4">
+                {related.map((p, i) => (
+                  <Reveal key={p.id} delay={(i % 4) * 0.08}>
+                    <ProductCard product={p} />
+                  </Reveal>
+                ))}
+              </div>
             </div>
           </section>
         )}

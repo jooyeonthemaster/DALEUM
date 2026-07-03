@@ -166,7 +166,7 @@ export default function DataTable<T>({
                       {rest.map((c) => (
                         <div key={c.key} className="flex items-baseline justify-between gap-4">
                           <dt className="shrink-0 text-xs text-ink-400">{c.label}</dt>
-                          <dd className="text-right text-sm text-ink-700">
+                          <dd className="min-w-0 text-right text-sm text-ink-700 [overflow-wrap:anywhere]">
                             {cellValue(row, c)}
                           </dd>
                         </div>

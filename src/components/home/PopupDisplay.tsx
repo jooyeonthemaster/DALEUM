@@ -98,9 +98,9 @@ export default function PopupDisplay({ popup }: PopupDisplayProps) {
         role="dialog"
         aria-modal={isCenter}
         aria-label={popup.title}
-        className={`relative w-full overflow-hidden border border-ink-200 bg-cream-50 transition-all duration-700 ${
-          isCenter ? "max-w-md" : "max-w-md"
-        } ${visible ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"}`}
+        className={`relative max-h-[calc(100svh-2.5rem)] w-full max-w-md overflow-hidden overflow-y-auto border border-ink-200 bg-cream-50 transition-all duration-700 ${
+          visible ? "translate-y-0 opacity-100" : "translate-y-5 opacity-0"
+        }`}
         style={{ transitionTimingFunction: "var(--ease-silk)" }}
       >
         {popup.image_url && (

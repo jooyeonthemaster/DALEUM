@@ -78,7 +78,7 @@ export default function VipAddToCartButton({
       type="button"
       onClick={handleAdd}
       disabled={disabled}
-      className={`flex h-10 w-full items-center justify-center border text-[13px] transition-colors duration-300 ease-hall ${
+      className={`flex h-11 w-full items-center justify-center border text-[13px] transition-colors duration-300 ease-hall ${
         disabled
           ? "cursor-not-allowed border-cream-50/10 text-cream-50/30"
           : added

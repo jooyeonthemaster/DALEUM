@@ -110,7 +110,7 @@ export default function VariantsTab({ variants, onChange, isNew }: VariantsTabPr
         type="button"
         onClick={add}
         disabled={variants.length >= 20}
-        className="mt-4 border border-dashed border-ink-300 px-4 py-2 text-sm text-ink-500 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-40"
+        className="mt-4 border border-dashed border-ink-300 px-4 py-2.5 text-sm text-ink-500 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-40"
       >
         옵션 추가
       </button>

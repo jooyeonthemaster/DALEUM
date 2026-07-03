@@ -61,18 +61,32 @@ export default function VipEntry() {
 
   return (
     <div className="relative w-full max-w-md text-center">
-      {/* 입장 확인 — 우아한 교차 전환 */}
+      {/* 입장 확인 — 라벨→타이틀→안내 순으로 떠오르는 교차 전환 */}
       <div
         aria-live="polite"
-        className={`absolute inset-x-0 top-0 transition-all duration-700 ease-hall ${
-          groupName ? "translate-y-0 opacity-100" : "pointer-events-none translate-y-3 opacity-0"
-        }`}
+        className={groupName ? "absolute inset-x-0 top-0" : "pointer-events-none absolute inset-x-0 top-0"}
       >
-        <p className="label-caps text-brass-300">Welcome</p>
-        <h2 className="headline-serif mt-4 text-2xl text-cream-50 md:text-3xl">
-          {groupName ? `${groupName} 멤버로 확인되었습니다.` : ""}
-        </h2>
-        <p className="mt-4 text-sm text-cream-200/60">프라이빗 셀렉션으로 안내해 드립니다.</p>
+        {[
+          <p key="label" className="label-caps text-brass-300">
+            Welcome
+          </p>,
+          <h2 key="title" className="headline-serif mt-4 text-balance text-2xl text-cream-50 md:text-3xl">
+            {groupName ? `${groupName} 멤버로 확인되었습니다.` : ""}
+          </h2>,
+          <p key="desc" className="mt-4 text-sm text-cream-200/60">
+            프라이빗 셀렉션으로 안내해 드립니다.
+          </p>,
+        ].map((node, i) => (
+          <div
+            key={i}
+            className={`transition-all duration-700 ease-hall ${
+              groupName ? "translate-y-0 opacity-100" : "translate-y-3 opacity-0"
+            }`}
+            style={{ transitionDelay: groupName ? `${0.25 + i * 0.14}s` : "0s" }}
+          >
+            {node}
+          </div>
+        ))}
       </div>
 
       {/* 코드 입력 폼 */}

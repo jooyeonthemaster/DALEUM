@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { Check } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
+import RevealText from "@/components/shop/RevealText";
 
 const INPUT =
   "h-12 w-full border border-ink-200 bg-transparent px-3.5 text-sm text-ink-900 transition-colors placeholder:text-ink-300 focus:border-forest-600 focus-visible:outline-none";
@@ -139,7 +140,12 @@ export default function SignupForm({ next }: { next: string }) {
   return (
     <div className="w-full max-w-md border border-ink-200 bg-cream-50 px-7 py-10 md:px-10 md:py-12">
       <p className="label-caps text-forest-600">Join Us</p>
-      <h1 className="headline-serif mt-3 text-3xl text-ink-900">회원가입</h1>
+      <RevealText
+        as="h1"
+        className="headline-serif mt-3 text-3xl text-ink-900"
+        text="회원가입"
+        delay={0.3}
+      />
       <p className="mt-3 text-sm leading-relaxed text-ink-500">
         발효가 완성한 곤약의 식탁, 다름과 함께하세요.
       </p>
@@ -252,8 +258,10 @@ export default function SignupForm({ next }: { next: string }) {
             {marketing && <Check size={13} strokeWidth={1.5} className="text-cream-50" />}
           </span>
           <span className="text-[13px] leading-relaxed text-ink-600">
-            할인 소식과 신제품 이야기를 이메일로 받아볼게요.{" "}
-            <span className="text-ink-400">(선택)</span>
+            할인 소식과 신제품 이야기를 이메일로{" "}
+            <span className="whitespace-nowrap">
+              받아볼게요. <span className="text-ink-400">(선택)</span>
+            </span>
           </span>
         </button>
 

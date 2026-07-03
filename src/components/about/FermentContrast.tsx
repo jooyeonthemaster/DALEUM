@@ -65,9 +65,15 @@ export default function FermentContrast({ className = "" }: { className?: string
           <Reveal
             key={row.no}
             as="li"
-            delay={i * 0.05}
-            className="hairline-t grid gap-5 py-8 md:grid-cols-[7rem_1fr_1fr] md:gap-10 md:py-10"
+            delay={i * 0.06}
+            className="relative grid gap-5 py-8 md:grid-cols-[7rem_1fr_1fr] md:gap-10 md:py-10"
           >
+            {/* 행 헤어라인 — 좌→우로 그어진다 */}
+            <Reveal
+              variant="rule"
+              delay={i * 0.06}
+              className="absolute inset-x-0 top-0 h-px bg-ink-200"
+            />
             <div className="flex items-baseline gap-4 md:block">
               <span className="krw headline-serif text-3xl leading-none text-ink-300 md:text-4xl">
                 {row.no}

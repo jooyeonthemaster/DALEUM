@@ -5,6 +5,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { resolveVipContext } from "@/lib/pricing";
 import { VIP_CODE_COOKIE } from "@/lib/constants";
+import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import VipEntry from "@/components/vip/VipEntry";
 
 export const metadata: Metadata = {
@@ -31,24 +33,37 @@ export default async function VipEntryPage() {
   }
 
   return (
-    <section className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-forest-950 px-6 py-28 md:py-36">
+    <section className="relative flex flex-1 flex-col items-center justify-center overflow-hidden bg-forest-950 px-6 py-20 md:py-32">
       {/* 초대장 프레임 — 아주 은은한 헤어라인 */}
       <div aria-hidden className="pointer-events-none absolute inset-3 border border-cream-50/10 md:inset-5" />
 
       <div className="relative w-full max-w-md text-center">
-        <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
-        <p className="label-caps text-brass-300">Private Lounge</p>
-        <h1 className="headline-serif mt-5 text-3xl text-cream-50 md:text-4xl">
-          초대받은 분들을 위한 공간
-        </h1>
-        <p className="mt-5 text-sm leading-relaxed text-cream-200/55">
-          다름이 준비한 프라이빗 셀렉션은
-          <br className="md:hidden" /> 초대 코드로만 열립니다.
-        </p>
+        {/* 진입 시퀀스 — 오너먼트 → 라벨 → 타이틀 → 안내 → 코드 인풋 순서로 깨어난다 */}
+        <Reveal>
+          <span aria-hidden className="mx-auto mb-8 block h-10 w-px bg-brass-500/60" />
+        </Reveal>
+        <Reveal delay={0.12}>
+          <p className="label-caps text-brass-300">Private Lounge</p>
+        </Reveal>
+        <RevealText
+          as="h1"
+          delay={0.3}
+          stagger={0.09}
+          text="초대받은 분들을 위한 공간"
+          className="headline-serif mt-5 block text-balance text-3xl text-cream-50 md:text-4xl"
+        />
+        <Reveal variant="blur" delay={0.8}>
+          <p className="mt-5 text-sm leading-relaxed text-cream-200/55">
+            다름이 준비한 프라이빗 셀렉션은
+            <br className="md:hidden" /> 초대 코드로만 열립니다.
+          </p>
+        </Reveal>
 
-        <div className="mt-12">
-          <VipEntry />
-        </div>
+        <Reveal delay={1.05}>
+          <div className="mt-12">
+            <VipEntry />
+          </div>
+        </Reveal>
       </div>
     </section>
   );

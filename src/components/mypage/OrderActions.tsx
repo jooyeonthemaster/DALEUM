@@ -115,7 +115,7 @@ export default function OrderActions({ orderId, status }: OrderActionsProps) {
               type="button"
               onClick={closeCancel}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               돌아가기
             </button>
@@ -123,7 +123,7 @@ export default function OrderActions({ orderId, status }: OrderActionsProps) {
               type="button"
               onClick={submitCancel}
               disabled={busy}
-              className="bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
+              className="h-11 bg-signal-red px-5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
             >
               {busy ? "처리 중…" : "취소하기"}
             </button>
@@ -166,7 +166,7 @@ export default function OrderActions({ orderId, status }: OrderActionsProps) {
               type="button"
               onClick={closeConfirm}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               돌아가기
             </button>
@@ -174,7 +174,7 @@ export default function OrderActions({ orderId, status }: OrderActionsProps) {
               type="button"
               onClick={submitConfirm}
               disabled={busy}
-              className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+              className="h-11 bg-forest-700 px-5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
               {busy ? "처리 중…" : "확정하기"}
             </button>

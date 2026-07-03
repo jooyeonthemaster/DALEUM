@@ -2,8 +2,10 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import type { ProductWithImages } from "@/lib/types";
+import Reveal from "@/components/shop/Reveal";
 import ProductCard from "@/components/shop/ProductCard";
 import OrderCard, { type OrderCardOrder } from "@/components/mypage/OrderCard";
+import MypageEmpty from "@/components/mypage/MypageEmpty";
 
 interface WishJoinRow {
   id: string;
@@ -26,27 +28,6 @@ function PanelTitle({
           {action.label}
         </Link>
       )}
-    </div>
-  );
-}
-
-/** 섹션 내부 빈 상태 — 페이지 전체 EmptyState보다 작은 패널형 */
-function PanelEmpty({
-  sentence,
-  action,
-}: {
-  sentence: string;
-  action: { href: string; label: string };
-}) {
-  return (
-    <div className="border border-ink-200 px-6 py-14 text-center">
-      <p className="headline-serif text-lg text-ink-900">{sentence}</p>
-      <Link
-        href={action.href}
-        className="link-line mt-5 inline-block text-[13px] text-ink-600"
-      >
-        {action.label}
-      </Link>
     </div>
   );
 }
@@ -82,8 +63,8 @@ export default async function MypageDashboard() {
     .filter((p): p is ProductWithImages => Boolean(p));
 
   return (
-    <div className="space-y-14">
-      <section>
+    <div className="space-y-12 md:space-y-14">
+      <Reveal as="section" variant="fade" delay={0.15}>
         <PanelTitle title="최근 주문" action={{ href: "/mypage/orders", label: "전체 보기" }} />
         {shippingCount > 0 && (
           <p className="mb-4 flex items-center gap-2 border border-forest-600 bg-forest-50 px-4 py-3 text-[13px] text-forest-800">
@@ -92,33 +73,43 @@ export default async function MypageDashboard() {
           </p>
         )}
         {orders.length === 0 ? (
-          <PanelEmpty
-            sentence="아직 주문 내역이 없습니다."
+          <MypageEmpty
+            title="아직 주문 내역이 없습니다."
+            description="발효가 완성한 곤약의 식탁을 천천히 둘러보세요."
             action={{ href: "/products", label: "상품 보러 가기" }}
           />
         ) : (
           <div className="space-y-3">
-            {orders.map((order) => (
-              <OrderCard key={order.id} order={order} />
+            {orders.map((order, i) => (
+              <Reveal key={order.id} variant="fade" delay={0.2 + i * 0.08}>
+                <OrderCard order={order} />
+              </Reveal>
             ))}
           </div>
         )}
-      </section>
+      </Reveal>
 
-      <section className="hairline-t pt-12">
-        <PanelTitle
-          title="위시리스트"
-          action={{ href: "/mypage/wishlist", label: "전체 보기" }}
-        />
-        {wishProducts.length === 0 ? (
-          <PanelEmpty
-            sentence="마음에 담아둔 상품이 아직 없습니다."
-            action={{ href: "/products", label: "상품 둘러보기" }}
+      <section className="hairline-t pt-10 md:pt-12">
+        <Reveal variant="fade">
+          <PanelTitle
+            title="위시리스트"
+            action={{ href: "/mypage/wishlist", label: "전체 보기" }}
           />
+        </Reveal>
+        {wishProducts.length === 0 ? (
+          <Reveal variant="fade" delay={0.08}>
+            <MypageEmpty
+              title="마음에 담아둔 상품이 아직 없습니다."
+              description="상품 상세에서 하트를 누르면 이곳에 차곡차곡 모입니다."
+              action={{ href: "/products", label: "상품 둘러보기" }}
+            />
+          </Reveal>
         ) : (
           <div className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-4 md:gap-x-4">
-            {wishProducts.map((product) => (
-              <ProductCard key={product.id} product={product} />
+            {wishProducts.map((product, i) => (
+              <Reveal key={product.id} variant="fade" delay={0.08 + i * 0.07}>
+                <ProductCard product={product} />
+              </Reveal>
             ))}
           </div>
         )}

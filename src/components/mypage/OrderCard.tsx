@@ -23,7 +23,7 @@ export default function OrderCard({ order, className = "" }: OrderCardProps) {
   const restCount = items.length - 1;
   const totalQty = items.reduce((n, item) => n + item.qty, 0);
   const shipped = order.status === "shipped";
-  const thumbs = items.slice(0, 4);
+  const thumbs = items.slice(0, 3);
 
   return (
     <Link
@@ -62,18 +62,19 @@ export default function OrderCard({ order, className = "" }: OrderCardProps) {
               )}
             </div>
           ))}
-          {items.length > 4 && (
+          {items.length > 3 && (
             <div className="flex h-14 w-14 items-center justify-center border border-ink-200 text-xs text-ink-500 md:h-16 md:w-16">
-              +{items.length - 4}
+              +{items.length - 3}
             </div>
           )}
         </div>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm text-ink-900">
+          <p className="line-clamp-2 text-sm leading-snug text-ink-900">
             {first ? first.name_snapshot : "주문 상품"}
-            {restCount > 0 && <span className="text-ink-500"> 외 {restCount}건</span>}
           </p>
-          <p className="mt-1 text-xs text-ink-400">총 {totalQty}개</p>
+          <p className="mt-1 text-xs text-ink-400">
+            {restCount > 0 && <>외 {restCount}건 · </>}총 {totalQty}개
+          </p>
         </div>
       </div>
 

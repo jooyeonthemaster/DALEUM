@@ -1,4 +1,5 @@
 import Marquee from "@/components/shop/Marquee";
+import Reveal from "@/components/shop/Reveal";
 
 const ITEMS = [
   "HACCP",
@@ -15,16 +16,18 @@ const ITEMS = [
 export default function CertMarquee() {
   return (
     <section aria-label="인증 및 생산 이력">
-      <Marquee className="hairline-t hairline-b bg-cream-50 py-5">
-        {ITEMS.map((item) => (
-          <span key={item} className="flex items-center">
-            <span className="label-caps mx-7 whitespace-nowrap text-ink-500 md:mx-10">
-              {item}
+      <Reveal>
+        <Marquee className="hairline-t hairline-b bg-cream-50 py-5">
+          {ITEMS.map((item) => (
+            <span key={item} className="flex items-center">
+              <span className="label-caps mx-7 whitespace-nowrap text-ink-500 md:mx-10">
+                {item}
+              </span>
+              <span aria-hidden className="h-1 w-1 rounded-full bg-forest-300" />
             </span>
-            <span aria-hidden className="h-1 w-1 rounded-full bg-forest-300" />
-          </span>
-        ))}
-      </Marquee>
+          ))}
+        </Marquee>
+      </Reveal>
     </section>
   );
 }

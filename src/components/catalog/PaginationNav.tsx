@@ -50,9 +50,9 @@ export default function PaginationNav({
 
   const items = pageWindow(page, totalPages);
   const arrowClass =
-    "flex h-9 w-9 items-center justify-center text-ink-600 transition-colors hover:text-ink-900";
+    "flex h-11 w-11 items-center justify-center text-ink-600 transition-colors hover:text-ink-900";
   const arrowDisabled =
-    "flex h-9 w-9 items-center justify-center text-ink-200";
+    "flex h-11 w-11 items-center justify-center text-ink-200";
 
   return (
     <nav
@@ -80,14 +80,14 @@ export default function PaginationNav({
               {item === page ? (
                 <span
                   aria-current="page"
-                  className="krw flex h-9 w-9 items-center justify-center border-b border-ink-900 text-sm font-medium text-ink-900"
+                  className="krw flex h-11 w-11 items-center justify-center border-b border-ink-900 text-sm font-medium text-ink-900"
                 >
                   {item}
                 </span>
               ) : (
                 <Link
                   href={hrefOf(basePath, query, item)}
-                  className="krw flex h-9 w-9 items-center justify-center text-sm text-ink-400 transition-colors hover:text-ink-900"
+                  className="krw flex h-11 w-11 items-center justify-center text-sm text-ink-400 transition-colors hover:text-ink-900"
                 >
                   {item}
                 </Link>

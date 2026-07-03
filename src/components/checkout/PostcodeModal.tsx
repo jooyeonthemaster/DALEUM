@@ -29,7 +29,7 @@ export default function PostcodeModal({ open, onClose, onComplete }: PostcodeMod
         <PostcodeEmbed
           onComplete={handleComplete}
           autoClose={false}
-          style={{ height: 460 }}
+          style={{ height: "clamp(380px, 62vh, 520px)" }}
         />
       </div>
     </CheckoutModal>

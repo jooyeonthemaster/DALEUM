@@ -7,9 +7,10 @@ import { X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { ProductWithImages } from "@/lib/types";
 import { useCart } from "@/store/cart";
+import Reveal from "@/components/shop/Reveal";
 import PriceTag from "@/components/shop/PriceTag";
-import EmptyState from "@/components/shop/EmptyState";
 import { ProductCardSkeleton } from "@/components/shop/Skeleton";
+import MypageEmpty from "./MypageEmpty";
 
 interface WishJoinRow {
   id: string;
@@ -126,18 +127,19 @@ export default function WishlistGrid() {
       )}
 
       {entries.length === 0 ? (
-        <EmptyState
+        <MypageEmpty
           title="마음에 담아둔 상품이 아직 없습니다."
           description="상품 상세에서 하트를 누르면 이곳에 차곡차곡 모입니다."
           action={{ href: "/products", label: "상품 둘러보기" }}
         />
       ) : (
         <ul className="grid grid-cols-2 gap-x-3 gap-y-10 md:grid-cols-3 md:gap-x-4 xl:grid-cols-4">
-          {entries.map(({ wishId, product }) => {
+          {entries.map(({ wishId, product }, index) => {
+            const delay = (index % 4) * 0.07;
             if (!product) {
               // 판매 종료/숨김 처리된 상품
               return (
-                <li key={wishId} className="relative">
+                <Reveal as="li" key={wishId} variant="fade" delay={delay} className="relative">
                   <div className="flex aspect-[4/5] items-center justify-center bg-cream-100">
                     <span className="label-caps text-ink-300">Daleum</span>
                   </div>
@@ -145,12 +147,12 @@ export default function WishlistGrid() {
                     type="button"
                     onClick={() => remove(wishId)}
                     aria-label="위시리스트에서 삭제"
-                    className="absolute right-2 top-2 bg-cream-50/90 p-1.5 text-ink-500 transition-colors hover:text-ink-900"
+                    className="absolute right-1 top-1 bg-cream-50/90 p-2.5 text-ink-500 transition-colors hover:text-ink-900"
                   >
                     <X size={16} strokeWidth={1.5} />
                   </button>
                   <p className="pt-4 text-sm text-ink-400">판매가 종료된 상품입니다.</p>
-                </li>
+                </Reveal>
               );
             }
 
@@ -160,7 +162,13 @@ export default function WishlistGrid() {
             const added = addedId === product.id;
 
             return (
-              <li key={wishId} className="group relative flex flex-col">
+              <Reveal
+                as="li"
+                key={wishId}
+                variant="fade"
+                delay={delay}
+                className="group relative flex flex-col"
+              >
                 <Link
                   href={`/products/${product.slug}`}
                   className="showcase-img relative block aspect-[4/5] overflow-hidden rounded-sm bg-cream-100"
@@ -190,7 +198,7 @@ export default function WishlistGrid() {
                   type="button"
                   onClick={() => remove(wishId)}
                   aria-label={`${product.name} 위시리스트에서 삭제`}
-                  className="absolute right-2 top-2 bg-cream-50/90 p-1.5 text-ink-500 transition-colors hover:text-ink-900"
+                  className="absolute right-1 top-1 bg-cream-50/90 p-2.5 text-ink-500 transition-colors hover:text-ink-900"
                 >
                   <X size={16} strokeWidth={1.5} />
                 </button>
@@ -218,14 +226,14 @@ export default function WishlistGrid() {
                       <button
                         type="button"
                         disabled
-                        className="w-full border border-ink-200 py-2.5 text-[13px] text-ink-400"
+                        className="flex min-h-11 w-full items-center justify-center border border-ink-200 text-[13px] text-ink-400"
                       >
                         일시품절
                       </button>
                     ) : hasVariants ? (
                       <Link
                         href={`/products/${product.slug}`}
-                        className="block w-full border border-ink-900 py-2.5 text-center text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
+                        className="flex min-h-11 w-full items-center justify-center border border-ink-900 text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
                       >
                         옵션 선택하기
                       </Link>
@@ -233,7 +241,7 @@ export default function WishlistGrid() {
                       <button
                         type="button"
                         onClick={() => handleAdd(product)}
-                        className={`w-full border py-2.5 text-[13px] transition-colors ${
+                        className={`flex min-h-11 w-full items-center justify-center border text-[13px] transition-colors ${
                           added
                             ? "border-forest-700 bg-forest-700 text-cream-50"
                             : "border-ink-900 text-ink-900 hover:bg-ink-900 hover:text-cream-50"
@@ -244,7 +252,7 @@ export default function WishlistGrid() {
                     )}
                   </div>
                 </div>
-              </li>
+              </Reveal>
             );
           })}
         </ul>

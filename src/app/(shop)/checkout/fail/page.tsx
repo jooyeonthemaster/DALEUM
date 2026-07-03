@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Link from "next/link";
 import { COMPANY } from "@/lib/constants";
+import Reveal from "@/components/shop/Reveal";
 
 export const metadata: Metadata = {
   title: "결제 실패",
@@ -39,22 +40,35 @@ export default async function CheckoutFailPage({
     "결제 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.";
 
   return (
-    <div className="container-hall flex flex-1 flex-col items-center py-24 text-center md:py-32">
-      <span className="mb-8 block h-10 w-px bg-ink-200" aria-hidden />
-      <p className="label-caps text-ink-400">Payment Failed</p>
-      <h1 className="headline-serif mt-4 max-w-md text-2xl text-ink-900 md:text-3xl">
-        결제를 완료하지 못했습니다.
-      </h1>
-      <p className="mt-5 max-w-md text-sm leading-relaxed text-ink-600">{reason}</p>
-      {code && <p className="label-caps mt-3 text-[10px] text-ink-300">{code}</p>}
+    <div className="container-hall flex flex-1 flex-col items-center py-20 text-center md:py-28">
+      <Reveal variant="fade" className="flex flex-col items-center">
+        <span className="mb-8 block h-10 w-px bg-ink-200" aria-hidden />
+        <p className="label-caps text-ink-400">Payment Failed</p>
+        <h1 className="headline-serif mt-4 max-w-md text-balance text-2xl text-ink-900 md:text-3xl">
+          결제를 완료하지 못했습니다.
+        </h1>
+        <p className="mt-5 max-w-md text-balance text-sm leading-relaxed text-ink-600">
+          {reason}
+        </p>
+        {code && <p className="label-caps mt-3 text-[10px] text-ink-300">{code}</p>}
+      </Reveal>
 
-      <p className="mt-8 max-w-md text-xs leading-relaxed text-ink-400">
+      <Reveal
+        as="p"
+        variant="fade"
+        delay={0.12}
+        className="mt-8 max-w-md text-xs leading-relaxed text-ink-400"
+      >
         장바구니에 담아두신 상품은 그대로 남아 있습니다.
         <br />
         같은 문제가 반복되면 고객센터({COMPANY.tel})로 문의해 주세요.
-      </p>
+      </Reveal>
 
-      <div className="mt-12 flex flex-col items-center gap-3 sm:flex-row">
+      <Reveal
+        variant="fade"
+        delay={0.2}
+        className="mt-12 flex flex-col items-center gap-3 sm:flex-row"
+      >
         <Link
           href="/checkout"
           className="label-caps inline-block bg-ink-900 px-9 py-3.5 text-cream-50 transition-colors duration-500 hover:bg-forest-800"
@@ -67,7 +81,7 @@ export default async function CheckoutFailPage({
         >
           장바구니로 가기
         </Link>
-      </div>
+      </Reveal>
     </div>
   );
 }

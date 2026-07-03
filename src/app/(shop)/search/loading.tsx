@@ -2,7 +2,7 @@ import Skeleton, { ProductCardSkeleton } from "@/components/shop/Skeleton";
 
 export default function Loading() {
   return (
-    <div className="container-hall pb-24 pt-10 md:pb-32 md:pt-16">
+    <div className="container-hall pb-16 pt-10 md:pb-28 md:pt-16">
       <Skeleton className="h-3 w-16" />
       <Skeleton className="mt-4 h-9 w-64" />
       <div className="hairline-b mt-6 pb-5">

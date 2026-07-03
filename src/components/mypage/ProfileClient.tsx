@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import Reveal from "@/components/shop/Reveal";
 import Skeleton from "@/components/shop/Skeleton";
 import ShopModal from "./ShopModal";
 
@@ -259,7 +260,7 @@ export default function ProfileClient() {
 
       <div className="space-y-4">
         {/* 기본 정보 */}
-        <section className="border border-ink-200 p-6 md:p-8">
+        <Reveal as="section" variant="fade" className="border border-ink-200 p-6 md:p-8">
           <h3 className="text-sm font-semibold text-ink-900">기본 정보</h3>
           <form onSubmit={saveInfo} className="mt-5 max-w-sm space-y-4" noValidate>
             <div>
@@ -298,16 +299,16 @@ export default function ProfileClient() {
             <button
               type="submit"
               disabled={infoBusy}
-              className="bg-forest-700 px-6 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+              className="h-11 bg-forest-700 px-6 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
               {infoBusy ? "저장 중…" : "저장"}
             </button>
             <FeedbackText feedback={infoFeedback} />
           </form>
-        </section>
+        </Reveal>
 
         {/* 비밀번호 변경 */}
-        <section className="border border-ink-200 p-6 md:p-8">
+        <Reveal as="section" variant="fade" delay={0.08} className="border border-ink-200 p-6 md:p-8">
           <h3 className="text-sm font-semibold text-ink-900">비밀번호 변경</h3>
           <form onSubmit={changePassword} className="mt-5 max-w-sm space-y-4" noValidate>
             <div>
@@ -353,16 +354,16 @@ export default function ProfileClient() {
             <button
               type="submit"
               disabled={pwBusy}
-              className="border border-ink-900 px-6 py-2.5 text-sm text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50 disabled:opacity-50"
+              className="h-11 border border-ink-900 px-6 text-sm text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50 disabled:opacity-50"
             >
               {pwBusy ? "변경 중…" : "비밀번호 변경"}
             </button>
             <FeedbackText feedback={pwFeedback} />
           </form>
-        </section>
+        </Reveal>
 
         {/* 마케팅 수신 동의 */}
-        <section className="border border-ink-200 p-6 md:p-8">
+        <Reveal as="section" variant="fade" delay={0.14} className="border border-ink-200 p-6 md:p-8">
           <div className="flex items-center justify-between gap-4">
             <div>
               <h3 className="text-sm font-semibold text-ink-900">마케팅 수신 동의</h3>
@@ -377,7 +378,7 @@ export default function ProfileClient() {
               aria-label="마케팅 수신 동의"
               onClick={toggleMarketing}
               disabled={marketingBusy}
-              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-300 disabled:opacity-60 ${
+              className={`relative h-6 w-11 shrink-0 rounded-full transition-colors duration-300 after:absolute after:-inset-y-2.5 after:-inset-x-2 after:content-[''] disabled:opacity-60 ${
                 marketing ? "bg-forest-600" : "bg-ink-200"
               }`}
             >
@@ -389,28 +390,28 @@ export default function ProfileClient() {
               />
             </button>
           </div>
-        </section>
+        </Reveal>
 
         {/* 계정 */}
-        <section className="border border-ink-200 p-6 md:p-8">
+        <Reveal as="section" variant="fade" delay={0.2} className="border border-ink-200 p-6 md:p-8">
           <h3 className="text-sm font-semibold text-ink-900">계정</h3>
-          <div className="mt-5 flex flex-wrap items-center gap-x-6 gap-y-3">
+          <div className="mt-5 flex flex-wrap items-center gap-x-4 gap-y-3">
             <button
               type="button"
               onClick={logout}
-              className="border border-ink-200 px-6 py-2.5 text-sm text-ink-700 transition-colors hover:border-ink-400 hover:text-ink-900"
+              className="h-11 border border-ink-200 px-6 text-sm text-ink-700 transition-colors hover:border-ink-400 hover:text-ink-900"
             >
               로그아웃
             </button>
             <button
               type="button"
               onClick={() => setWithdrawOpen(true)}
-              className="text-[13px] text-ink-400 transition-colors hover:text-signal-red"
+              className="px-2 py-2.5 text-[13px] text-ink-400 transition-colors hover:text-signal-red"
             >
               회원 탈퇴
             </button>
           </div>
-        </section>
+        </Reveal>
       </div>
 
       {/* 회원 탈퇴 확인 모달 */}
@@ -424,7 +425,7 @@ export default function ProfileClient() {
               type="button"
               onClick={closeWithdraw}
               disabled={withdrawBusy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               취소
             </button>
@@ -432,7 +433,7 @@ export default function ProfileClient() {
               type="button"
               onClick={withdraw}
               disabled={withdrawBusy}
-              className="bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
+              className="h-11 bg-signal-red px-5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
             >
               {withdrawBusy ? "처리 중…" : "탈퇴하기"}
             </button>
@@ -458,7 +459,7 @@ export default function ProfileClient() {
           type="button"
           onClick={() => setWithdrawAgree((v) => !v)}
           aria-pressed={withdrawAgree}
-          className="mt-4 flex items-center gap-2.5 text-left"
+          className="mt-3 flex min-h-11 items-center gap-2.5 text-left"
         >
           <span
             aria-hidden

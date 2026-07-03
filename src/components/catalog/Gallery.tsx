@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import { useState } from "react";
+import Reveal from "@/components/shop/Reveal";
+import Parallax from "@/components/shop/Parallax";
 
 export interface GalleryImage {
   url: string;
@@ -34,31 +36,36 @@ export default function Gallery({ images, name, className = "" }: GalleryProps) 
 
   return (
     <div className={className}>
-      {/* 대표 이미지 — 겹쳐 놓고 페이드 */}
-      <div className="relative aspect-[4/5] w-full overflow-hidden rounded-sm bg-cream-100">
-        {images.map((img, i) => (
-          <Image
-            key={`${img.url}-${i}`}
-            src={img.url}
-            alt={img.alt ?? name}
-            fill
-            priority={i === 0}
-            sizes="(min-width: 1024px) 50vw, 100vw"
-            className={`object-cover transition-opacity duration-700 ease-silk ${
-              i === active ? "opacity-100" : "opacity-0"
-            }`}
-            aria-hidden={i !== active}
-          />
-        ))}
-      </div>
+      {/* 대표 이미지 — 커튼 리빌 + 은은한 패럴랙스, 겹쳐 놓고 페이드 전환 */}
+      <Reveal variant="clip">
+        <div className="relative aspect-[4/5] w-full overflow-hidden rounded-sm bg-cream-100">
+          <Parallax speed={30} className="absolute inset-0">
+            {images.map((img, i) => (
+              <Image
+                key={`${img.url}-${i}`}
+                src={img.url}
+                alt={img.alt ?? name}
+                fill
+                priority={i === 0}
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className={`scale-110 object-cover transition-opacity duration-700 ease-silk ${
+                  i === active ? "opacity-100" : "opacity-0"
+                }`}
+                aria-hidden={i !== active}
+              />
+            ))}
+          </Parallax>
+        </div>
+      </Reveal>
 
       {/* 썸네일 스트립 */}
       {images.length > 1 && (
-        <div
-          className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-          role="tablist"
-          aria-label="상품 이미지"
-        >
+        <Reveal variant="fade" delay={0.35}>
+          <div
+            className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+            role="tablist"
+            aria-label="상품 이미지"
+          >
           {images.map((img, i) => (
             <button
               key={`thumb-${img.url}-${i}`}
@@ -82,7 +89,8 @@ export default function Gallery({ images, name, className = "" }: GalleryProps) 
               />
             </button>
           ))}
-        </div>
+          </div>
+        </Reveal>
       )}
     </div>
   );

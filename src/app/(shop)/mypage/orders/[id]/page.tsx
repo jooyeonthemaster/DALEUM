@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { OrderWithItems, Payment, Shipment } from "@/lib/types";
 import { getCarrier, PAYMENT_STATUS_LABELS, ORDER_STATUS_LABELS } from "@/lib/constants";
 import { formatDate, formatDateTime, formatPhone, krw } from "@/lib/format";
+import Reveal from "@/components/shop/Reveal";
 import OrderStatusLabel from "@/components/mypage/OrderStatusLabel";
 import OrderTimeline from "@/components/mypage/OrderTimeline";
 import OrderActions from "@/components/mypage/OrderActions";
@@ -82,9 +83,12 @@ export default async function OrderDetailPage({
   return (
     <div>
       {/* 헤더 */}
-      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+      <Reveal variant="fade" delay={0.12} className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
         <div>
-          <Link href="/mypage/orders" className="text-xs text-ink-400 hover:text-ink-900">
+          <Link
+            href="/mypage/orders"
+            className="-my-2 inline-block py-2 text-xs text-ink-400 transition-colors hover:text-ink-900"
+          >
             주문 내역으로 돌아가기
           </Link>
           <div className="mt-2 flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -97,11 +101,11 @@ export default async function OrderDetailPage({
           </div>
         </div>
         <OrderStatusLabel status={order.status} />
-      </div>
+      </Reveal>
 
       {/* 진행 타임라인 / 취소 안내 */}
       {isCancelled ? (
-        <div className="mt-8 border border-ink-200 bg-cream-100 px-6 py-6">
+        <Reveal variant="fade" delay={0.2} className="mt-8 border border-ink-200 bg-cream-100 px-6 py-6">
           <p className="text-sm font-medium text-ink-900">
             {ORDER_STATUS_LABELS[order.status]}
             {order.cancelled_at && (
@@ -118,20 +122,20 @@ export default async function OrderDetailPage({
           <p className="mt-2 text-[13px] leading-relaxed text-ink-500">
             결제하신 금액은 결제 수단 정책에 따라 3~5영업일 내 환불됩니다.
           </p>
-        </div>
+        </Reveal>
       ) : (
-        <div className="mt-9 border border-ink-200 px-4 py-7 md:px-8">
+        <Reveal variant="fade" delay={0.2} className="mt-9 border border-ink-200 px-4 py-7 md:px-8">
           <OrderTimeline status={order.status} />
           {order.status === "confirmed" && (
             <p className="mt-5 text-center text-[13px] text-forest-700">
               구매가 확정된 주문입니다. 상품별로 리뷰를 남겨보세요.
             </p>
           )}
-        </div>
+        </Reveal>
       )}
 
       {/* 주문 상품 */}
-      <section className="hairline-t mt-10 pt-8">
+      <Reveal as="section" variant="fade" delay={0.28} className="hairline-t mt-10 pt-8">
         <SectionHeading>주문 상품</SectionHeading>
         <ul className="divide-y divide-ink-100 border-y border-ink-200">
           {items.map((item) => {
@@ -178,7 +182,7 @@ export default async function OrderDetailPage({
                     ) : (
                       <Link
                         href={`/mypage/reviews?item=${item.id}`}
-                        className="border border-ink-200 px-3 py-1.5 text-xs text-ink-700 transition-colors hover:border-ink-400 hover:text-ink-900"
+                        className="flex min-h-10 items-center border border-ink-200 px-3.5 text-xs text-ink-700 transition-colors hover:border-ink-400 hover:text-ink-900 md:min-h-8"
                       >
                         리뷰 쓰기
                       </Link>
@@ -188,11 +192,11 @@ export default async function OrderDetailPage({
             );
           })}
         </ul>
-      </section>
+      </Reveal>
 
-      <div className="mt-10 grid gap-10 md:grid-cols-2">
+      <div className="mt-10 grid gap-10 overflow-x-clip md:grid-cols-2">
         {/* 배송 정보 */}
-        <section>
+        <Reveal as="section" variant="left">
           <SectionHeading>배송 정보</SectionHeading>
           <dl className="space-y-3 text-sm">
             <div className="flex gap-4">
@@ -225,7 +229,7 @@ export default async function OrderDetailPage({
           {shipment && (
             <div className="mt-5 border border-ink-200 px-5 py-4">
               <p className="label-caps text-ink-400">Delivery</p>
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                 <p className="text-sm text-ink-900">
                   {shipment.carrier_name || carrier?.name || "택배"}
                   <span className="krw ml-2 text-ink-600">{shipment.tracking_no}</span>
@@ -235,7 +239,7 @@ export default async function OrderDetailPage({
                     href={trackingUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[13px] font-medium text-forest-700 hover:text-forest-800"
+                    className="-my-1 inline-flex min-h-11 items-center gap-1 border border-forest-700/40 px-4 text-[13px] font-medium text-forest-700 transition-colors hover:border-forest-700 hover:text-forest-800 md:min-h-9"
                   >
                     배송 조회
                     <ArrowUpRight size={14} strokeWidth={1.5} />
@@ -249,10 +253,10 @@ export default async function OrderDetailPage({
               )}
             </div>
           )}
-        </section>
+        </Reveal>
 
         {/* 결제 정보 */}
-        <section>
+        <Reveal as="section" variant="right">
           <SectionHeading>결제 정보</SectionHeading>
           <dl className="space-y-2.5 text-sm">
             <div className="flex items-baseline justify-between">
@@ -287,7 +291,7 @@ export default async function OrderDetailPage({
           {payment && (
             <div className="mt-5 border border-ink-200 px-5 py-4">
               <p className="label-caps text-ink-400">Payment</p>
-              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-2">
+              <div className="mt-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
                 <p className="text-sm text-ink-900">
                   {payment.method ?? "토스페이먼츠"}
                   <span className="ml-2 text-xs text-ink-400">
@@ -299,7 +303,7 @@ export default async function OrderDetailPage({
                     href={payment.receipt_url}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="inline-flex items-center gap-1 text-[13px] font-medium text-forest-700 hover:text-forest-800"
+                    className="-my-1 inline-flex min-h-11 items-center gap-1 border border-forest-700/40 px-4 text-[13px] font-medium text-forest-700 transition-colors hover:border-forest-700 hover:text-forest-800 md:min-h-9"
                   >
                     영수증 보기
                     <ArrowUpRight size={14} strokeWidth={1.5} />
@@ -313,7 +317,7 @@ export default async function OrderDetailPage({
               )}
             </div>
           )}
-        </section>
+        </Reveal>
       </div>
 
       {/* 액션 */}

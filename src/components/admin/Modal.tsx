@@ -137,7 +137,7 @@ export default function Modal({
             type="button"
             onClick={onClose}
             aria-label="닫기"
-            className="-mr-1 p-1 text-ink-400 transition-colors hover:text-ink-900"
+            className="-my-2 -mr-2 p-2 text-ink-400 transition-colors hover:text-ink-900"
           >
             <X size={18} strokeWidth={1.5} />
           </button>

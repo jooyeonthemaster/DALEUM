@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, type FormEvent } from "react";
 import { createClient } from "@/lib/supabase/client";
+import RevealText from "@/components/shop/RevealText";
 
 const INPUT =
   "h-12 w-full border border-ink-200 bg-transparent px-3.5 text-sm text-ink-900 transition-colors placeholder:text-ink-300 focus:border-forest-600 focus-visible:outline-none";
@@ -61,7 +62,12 @@ export default function LoginForm({
   return (
     <div className="w-full max-w-md border border-ink-200 bg-cream-50 px-7 py-10 md:px-10 md:py-12">
       <p className="label-caps text-forest-600">Member</p>
-      <h1 className="headline-serif mt-3 text-3xl text-ink-900">어서 오세요</h1>
+      <RevealText
+        as="h1"
+        className="headline-serif mt-3 text-3xl text-ink-900"
+        text="어서 오세요"
+        delay={0.3}
+      />
       <p className="mt-3 text-sm leading-relaxed text-ink-500">
         다름의 발효 식탁에 오신 것을 환영합니다.
       </p>

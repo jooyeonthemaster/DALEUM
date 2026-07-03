@@ -73,40 +73,48 @@ export default function ReviewsSection({ reviews }: ReviewsSectionProps) {
   const list = (reviews.length > 0 ? reviews : FALLBACK_REVIEWS).slice(0, 3);
 
   return (
-    <section className="bg-cream-100 py-24 md:py-32">
+    <section className="bg-cream-100 py-16 md:py-28">
       <div className="container-hall">
         <Reveal>
           <SectionTitle
             overline="Voices"
             title="먼저 맛본 분들의 이야기"
-            className="mb-12 md:mb-16"
+            className="mb-10 md:mb-14"
           />
         </Reveal>
 
-        <div className="grid gap-12 md:grid-cols-3 md:gap-8 lg:gap-12">
+        <div className="grid gap-10 md:grid-cols-3 md:gap-8 lg:gap-12">
           {list.map((review, i) => (
-            <Reveal
-              key={review.id}
-              as="figure"
-              delay={i * 0.1}
-              className="flex h-full flex-col"
-            >
-              <Stars rating={review.rating} />
-              <blockquote className="headline-serif mt-6 flex-1 text-lg leading-[1.7] text-ink-900 md:text-xl">
-                <p className="line-clamp-5">“{review.content}”</p>
-              </blockquote>
-              <figcaption className="mt-8 flex items-center gap-3 text-[13px] text-ink-500">
-                <span className="font-medium text-ink-700">
-                  {maskName(review.name)} 님
-                </span>
-                {review.productName && (
-                  <>
-                    <span aria-hidden className="h-3 w-px bg-ink-300" />
-                    <span>{review.productName}</span>
-                  </>
-                )}
-              </figcaption>
-            </Reveal>
+            <div key={review.id} className="flex h-full flex-col">
+              {/* 헤어라인이 좌→우로 그어진 뒤, 인용문이 블러가 걷히며 떠오른다 */}
+              <Reveal
+                variant="rule"
+                delay={i * 0.12}
+                className="h-px w-full bg-ink-200"
+              />
+              <Reveal
+                as="figure"
+                variant="blur"
+                delay={0.1 + i * 0.12}
+                className="flex flex-1 flex-col pt-7"
+              >
+                <Stars rating={review.rating} />
+                <blockquote className="headline-serif mt-6 flex-1 text-lg leading-[1.7] text-ink-900 md:text-xl">
+                  <p className="line-clamp-5">“{review.content}”</p>
+                </blockquote>
+                <figcaption className="mt-8 flex items-center gap-3 text-[13px] text-ink-500">
+                  <span className="font-medium text-ink-700">
+                    {maskName(review.name)} 님
+                  </span>
+                  {review.productName && (
+                    <>
+                      <span aria-hidden className="h-3 w-px bg-ink-300" />
+                      <span>{review.productName}</span>
+                    </>
+                  )}
+                </figcaption>
+              </Reveal>
+            </div>
           ))}
         </div>
       </div>

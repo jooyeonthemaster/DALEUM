@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import {
@@ -149,10 +150,18 @@ export default function Header({ user, categories }: HeaderProps) {
         }`}
       />
       <div className="container-hall relative flex h-16 items-center justify-between gap-3 md:h-20">
-        {/* 로고 — 워드마크 */}
-        <Link href="/" className="flex shrink-0 items-baseline gap-2" aria-label="다름 DALEUM 홈">
-          <span className="headline-serif text-xl leading-none md:text-[1.4rem]">다름</span>
-          <span className="label-caps opacity-70">Daleum</span>
+        {/* 로고 */}
+        <Link href="/" className="flex shrink-0 items-center" aria-label="다름 DALEUM 홈">
+          <Image
+            src="/editorial/logo-mark.png"
+            alt="다름 DALEUM"
+            width={264}
+            height={66}
+            priority
+            className={`h-6 w-auto transition-[filter] duration-500 md:h-7 ${
+              overHero ? "invert" : ""
+            }`}
+          />
         </Link>
 
         {/* 데스크톱 내비 */}
@@ -321,11 +330,16 @@ export default function Header({ user, categories }: HeaderProps) {
         <div className="container-hall flex h-16 shrink-0 items-center justify-between">
           <Link
             href="/"
-            className="flex items-baseline gap-2"
+            className="flex items-center"
             onClick={() => setMobileOpen(false)}
           >
-            <span className="headline-serif text-xl leading-none">다름</span>
-            <span className="label-caps opacity-70">Daleum</span>
+            <Image
+              src="/editorial/logo-mark.png"
+              alt="다름 DALEUM"
+              width={264}
+              height={66}
+              className="h-6 w-auto"
+            />
           </Link>
           <button
             type="button"

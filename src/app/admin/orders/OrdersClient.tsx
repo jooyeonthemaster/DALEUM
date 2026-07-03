@@ -186,7 +186,6 @@ export default function OrdersClient() {
       key: "created_at",
       label: "일시",
       width: "140px",
-      hideOnMobile: true,
       render: (o) => <span className="krw text-ink-600">{formatDateTime(o.created_at)}</span>,
     },
     {

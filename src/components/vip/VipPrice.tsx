@@ -52,7 +52,7 @@ export default function VipPrice({
         {krw(price)}원
       </span>
       {showCompare && (
-        <del className={`font-normal text-cream-50/35 ${s.sub}`}>{krw(compareAt)}원</del>
+        <del className={`font-normal text-cream-50/55 ${s.sub}`}>{krw(compareAt)}원</del>
       )}
     </p>
   );

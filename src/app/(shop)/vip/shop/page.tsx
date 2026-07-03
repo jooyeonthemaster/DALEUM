@@ -8,6 +8,7 @@ import { resolveVipContext, resolvePrices } from "@/lib/pricing";
 import { VIP_CODE_COOKIE } from "@/lib/constants";
 import type { ProductWithImages } from "@/lib/types";
 import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import VipProductCard from "@/components/vip/VipProductCard";
 
 export const metadata: Metadata = {
@@ -54,15 +55,19 @@ export default async function VipShopPage() {
 
   return (
     <div className="flex-1 bg-forest-950">
-      {/* 인사 — 프라이빗 살롱 헤더 */}
-      <section className="container-hall pb-12 pt-14 md:pb-16 md:pt-24">
+      {/* 인사 — 프라이빗 살롱 헤더: 라벨 → 세리프 헤드라인 어절 스태거 → 안내문 블러 */}
+      <section className="container-hall pb-12 pt-16 md:pb-16 md:pt-24">
         <Reveal>
           <p className="label-caps text-brass-300">Private Selection</p>
-          <h1 className="headline-serif mt-5 max-w-3xl text-3xl leading-tight text-cream-50 md:text-5xl">
-            {groupName}을 위한
-            <br />
-            프라이빗 셀렉션
-          </h1>
+        </Reveal>
+        <RevealText
+          as="h1"
+          delay={0.15}
+          stagger={0.08}
+          text={`${groupName}을 위한\n프라이빗 셀렉션`}
+          className="headline-serif mt-5 max-w-3xl text-balance text-3xl leading-tight text-cream-50 md:text-5xl"
+        />
+        <Reveal variant="blur" delay={0.6}>
           <p className="mt-6 max-w-xl text-sm leading-relaxed text-cream-200/55">
             {discountRate > 0
               ? `모든 상품에 기본 ${discountRate}% 멤버 우대가가 적용되어 있습니다. 일부 품목은 더 깊은 우대가로 준비했습니다.`
@@ -72,10 +77,15 @@ export default async function VipShopPage() {
         </Reveal>
       </section>
 
+      {/* 헤어라인 — 좌에서 우로 그어지는 룰 */}
+      <div className="container-hall">
+        <Reveal variant="rule" className="h-px w-full bg-cream-50/10" />
+      </div>
+
       {/* 상품 그리드 */}
-      <section className="container-hall border-t border-cream-50/10 pb-24 pt-12 md:pb-32 md:pt-16">
+      <section className="container-hall pb-24 pt-12 md:pb-32 md:pt-16">
         {products.length === 0 ? (
-          <div className="py-24 text-center">
+          <Reveal className="py-20 text-center md:py-24">
             <h2 className="headline-serif text-xl text-cream-50 md:text-2xl">
               셀렉션을 준비하고 있습니다.
             </h2>
@@ -88,7 +98,7 @@ export default async function VipShopPage() {
             >
               스토어 둘러보기
             </Link>
-          </div>
+          </Reveal>
         ) : (
           <div className="grid grid-cols-2 gap-x-3 gap-y-12 md:grid-cols-3 md:gap-x-4 xl:grid-cols-4">
             {products.map((product, i) => {
@@ -96,13 +106,16 @@ export default async function VipShopPage() {
                 effective: product.price,
                 vipApplied: false,
               };
+              const delay = (i % 4) * 0.08;
               return (
-                <Reveal key={product.id} delay={(i % 4) * 0.06}>
+                <Reveal key={product.id} delay={delay}>
                   <VipProductCard
                     product={product}
                     price={resolved.effective}
                     vipApplied={resolved.vipApplied}
                     priority={i < 4}
+                    revealImage
+                    revealDelay={delay + 0.1}
                   />
                 </Reveal>
               );

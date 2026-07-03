@@ -15,6 +15,7 @@ import { calcShippingFee } from "@/lib/shipping";
 import { TOSS_CLIENT_KEY } from "@/lib/constants";
 import type { Address, ShippingSettings } from "@/lib/types";
 import EmptyState from "@/components/shop/EmptyState";
+import Reveal from "@/components/shop/Reveal";
 import Skeleton from "@/components/shop/Skeleton";
 import AddressPickerModal from "./AddressPickerModal";
 import PostcodeModal from "./PostcodeModal";
@@ -317,24 +318,26 @@ export default function CheckoutForm({ user, profile, addresses, shipping }: Che
   const count = lines.reduce((n, l) => n + l.qty, 0);
 
   return (
-    <div className="container-hall pb-24 pt-10 md:pt-16">
-      <header>
+    <div className="container-hall pb-20 pt-10 md:pb-24 md:pt-16">
+      <Reveal as="header" variant="fade">
         <p className="label-caps text-forest-600">Checkout</p>
         <h1 className="headline-serif mt-3 text-3xl text-ink-900 md:text-4xl">주문 / 결제</h1>
         {!user && (
-          <p className="mt-4 text-sm text-ink-500">
+          <p className="mt-4 max-w-xl text-sm leading-relaxed text-ink-500">
             이미 회원이신가요?{" "}
             <Link href="/login" className="link-line font-medium text-ink-900">
               로그인
             </Link>
-            하시면 배송지를 바로 불러올 수 있습니다. 비회원으로도 주문하실 수 있습니다.
+            하시면 배송지를 바로 불러올 수 있습니다.{" "}
+            <br className="hidden md:block" />
+            비회원으로도 주문하실 수 있습니다.
           </p>
         )}
-      </header>
+      </Reveal>
 
-      <div className="mt-10 grid items-start gap-12 md:mt-12 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-16">
-        {/* ==================== 좌측: 입력 폼 ==================== */}
-        <div className="min-w-0 space-y-12">
+      <div className="mt-10 grid items-start gap-x-16 gap-y-12 md:mt-12 lg:grid-cols-[minmax(0,1fr)_400px] lg:gap-y-14">
+        {/* ==================== 좌측 상단: 주문 정보 입력 ==================== */}
+        <div className="min-w-0 space-y-12 lg:col-start-1 lg:row-start-1">
           {/* ---------- 주문 상품 ---------- */}
           <section>
             <h2 className={sectionTitleCls}>
@@ -432,7 +435,7 @@ export default function CheckoutForm({ user, profile, addresses, shipping }: Che
                 <button
                   type="button"
                   onClick={copyOrdererToRecipient}
-                  className="border border-ink-200 px-3.5 py-2 text-xs text-ink-600 transition-colors hover:border-ink-900 hover:text-ink-900"
+                  className="border border-ink-200 px-4 py-2.5 text-xs text-ink-600 transition-colors hover:border-ink-900 hover:text-ink-900"
                 >
                   주문자와 동일
                 </button>
@@ -440,7 +443,7 @@ export default function CheckoutForm({ user, profile, addresses, shipping }: Che
                   <button
                     type="button"
                     onClick={() => setPickerOpen(true)}
-                    className="border border-ink-900 px-3.5 py-2 text-xs font-medium text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
+                    className="border border-ink-900 px-4 py-2.5 text-xs font-medium text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
                   >
                     배송지 선택
                   </button>
@@ -598,66 +601,10 @@ export default function CheckoutForm({ user, profile, addresses, shipping }: Che
             )}
             {couponError && <p className="mt-2 text-xs text-signal-red">{couponError}</p>}
           </section>
-
-          {/* ---------- 결제 수단 (토스 결제위젯) ---------- */}
-          <section>
-            <h2 className={sectionTitleCls}>결제 수단</h2>
-            {widgetError ? (
-              <p className="mt-6 border border-signal-red/30 px-5 py-4 text-sm text-signal-red">
-                {widgetError}
-              </p>
-            ) : (
-              <div className="mt-6 border border-ink-200">
-                {!widgetReady && (
-                  <div className="space-y-3 p-5">
-                    <Skeleton className="h-32 w-full" />
-                    <Skeleton className="h-10 w-full" />
-                  </div>
-                )}
-                <div id="toss-payment-methods" />
-                <div id="toss-agreement" />
-              </div>
-            )}
-
-            <label className="mt-7 flex cursor-pointer items-start gap-3 text-sm text-ink-600">
-              <input
-                type="checkbox"
-                checked={agree}
-                onChange={(e) => setAgree(e.target.checked)}
-                className="mt-0.5 h-4 w-4 shrink-0 accent-forest-600"
-              />
-              <span>
-                주문할 상품의 내용과 결제 정보를 확인하였으며, 구매 진행 및 개인정보
-                수집·이용(주문 처리 목적)에 동의합니다.{" "}
-                <span className="font-medium text-ink-900">(필수)</span>
-              </span>
-            </label>
-
-            {error && (
-              <p
-                role="alert"
-                className="mt-5 border border-signal-red/30 bg-cream-100 px-5 py-3.5 text-sm text-signal-red"
-              >
-                {error}
-              </p>
-            )}
-
-            <button
-              type="button"
-              onClick={handlePay}
-              disabled={paying || !widgetReady}
-              className="mt-6 w-full bg-forest-600 py-4 text-center text-[15px] font-semibold text-cream-50 transition-colors duration-500 hover:bg-forest-700 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {paying ? "결제 준비 중…" : `${krw(total)}원 결제하기`}
-            </button>
-            <p className="mt-4 text-center text-xs text-ink-400">
-              최종 결제 금액은 서버에서 다시 한번 검증됩니다.
-            </p>
-          </section>
         </div>
 
-        {/* ==================== 우측: 주문 요약 ==================== */}
-        <aside className="lg:sticky lg:top-28">
+        {/* ==================== 우측: 결제 금액 요약 (모바일에서는 결제 수단 앞) ==================== */}
+        <aside className="lg:sticky lg:top-28 lg:col-start-2 lg:row-span-2 lg:row-start-1">
           <div className="border border-ink-200 bg-cream-100/60 p-6 md:p-7">
             <h2 className="headline-serif text-lg text-ink-900">결제 금액</h2>
             <dl className="mt-6 space-y-3 text-sm">
@@ -695,6 +642,74 @@ export default function CheckoutForm({ user, profile, addresses, shipping }: Che
             )}
           </div>
         </aside>
+
+        {/* ==================== 좌측 하단: 결제 수단 (토스 결제위젯) ==================== */}
+        <section className="min-w-0 lg:col-start-1 lg:row-start-2">
+          <h2 className={sectionTitleCls}>결제 수단</h2>
+          {widgetError ? (
+            <p className="mt-6 border border-signal-red/30 px-5 py-4 text-sm text-signal-red">
+              {widgetError}
+            </p>
+          ) : (
+            <div className="relative mt-6 border border-ink-200">
+              {/* 로딩 중에도 위젯 실측 높이만큼 자리를 잡아 레이아웃 점프를 없앤다 */}
+              <div className={widgetReady ? undefined : "min-h-[600px] sm:min-h-[560px]"}>
+                <div id="toss-payment-methods" />
+                <div id="toss-agreement" />
+              </div>
+              {!widgetReady && (
+                <div className="absolute inset-0 bg-cream-50 p-6" aria-hidden>
+                  <Skeleton className="h-5 w-24" />
+                  <div className="mt-5 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="h-16 w-full" />
+                    <Skeleton className="hidden h-16 w-full sm:block" />
+                    <Skeleton className="hidden h-16 w-full sm:block" />
+                  </div>
+                  <Skeleton className="mt-5 h-12 w-full" />
+                  <Skeleton className="mt-8 h-5 w-2/3" />
+                </div>
+              )}
+            </div>
+          )}
+
+          <label className="mt-7 flex cursor-pointer items-start gap-3 py-1 text-sm leading-relaxed text-ink-600">
+            <input
+              type="checkbox"
+              checked={agree}
+              onChange={(e) => setAgree(e.target.checked)}
+              className="mt-0.5 h-5 w-5 shrink-0 accent-forest-600"
+            />
+            <span>
+              주문할 상품의 내용과 결제 정보를 확인하였으며, 구매 진행 및 개인정보
+              수집·이용(주문 처리 목적)에 동의합니다.{" "}
+              <span className="font-medium text-ink-900">(필수)</span>
+            </span>
+          </label>
+
+          {error && (
+            <p
+              role="alert"
+              className="mt-5 border border-signal-red/30 bg-cream-100 px-5 py-3.5 text-sm text-signal-red"
+            >
+              {error}
+            </p>
+          )}
+
+          <button
+            type="button"
+            onClick={handlePay}
+            disabled={paying || !widgetReady}
+            className="mt-6 w-full bg-forest-600 py-4 text-center text-[15px] font-semibold text-cream-50 transition-colors duration-500 hover:bg-forest-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {paying ? "결제 준비 중…" : `${krw(total)}원 결제하기`}
+          </button>
+          <p className="mt-4 text-center text-xs text-ink-400">
+            최종 결제 금액은 서버에서 다시 한번 검증됩니다.
+          </p>
+        </section>
       </div>
 
       {/* ---------- 모달 ---------- */}

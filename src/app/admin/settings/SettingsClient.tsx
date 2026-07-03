@@ -85,7 +85,7 @@ function SectionCard({
           type="button"
           onClick={onSave}
           disabled={saving}
-          className="shrink-0 bg-forest-700 px-5 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+          className="shrink-0 bg-forest-700 px-5 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
         >
           {saving ? "저장 중…" : "저장"}
         </button>
@@ -170,7 +170,7 @@ export default function SettingsClient() {
         <button
           type="button"
           onClick={retry}
-          className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100"
+          className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100"
         >
           다시 불러오기
         </button>

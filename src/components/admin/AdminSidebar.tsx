@@ -129,7 +129,7 @@ export default function AdminSidebar({ onNavigate }: AdminSidebarProps) {
                       href={item.href}
                       onClick={onNavigate}
                       aria-current={active ? "page" : undefined}
-                      className={`relative flex items-center px-6 py-2 text-sm transition-colors duration-200 ${
+                      className={`relative flex items-center px-6 py-2.5 text-sm transition-colors duration-200 ${
                         active
                           ? "bg-forest-50 font-semibold text-forest-800"
                           : "text-ink-600 hover:bg-cream-100 hover:text-ink-900"

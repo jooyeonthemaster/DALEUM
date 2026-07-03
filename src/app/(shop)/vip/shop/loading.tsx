@@ -2,7 +2,7 @@
 export default function VipShopLoading() {
   return (
     <div className="flex-1 bg-forest-950">
-      <section className="container-hall pb-12 pt-14 md:pb-16 md:pt-24">
+      <section className="container-hall pb-12 pt-16 md:pb-16 md:pt-24">
         <div className="h-3 w-32 animate-pulse bg-cream-50/10" />
         <div className="mt-6 h-9 w-72 max-w-full animate-pulse bg-cream-50/10 md:h-12 md:w-[26rem]" />
         <div className="mt-6 h-4 w-80 max-w-full animate-pulse bg-cream-50/[0.06]" />

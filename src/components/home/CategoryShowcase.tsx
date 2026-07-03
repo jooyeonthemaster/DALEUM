@@ -89,13 +89,13 @@ export default function CategoryShowcase({ categories }: CategoryShowcaseProps) 
       : "aspect-[4/5] sm:aspect-[21/9]";
 
   return (
-    <section className="container-hall py-24 md:py-32">
+    <section className="container-hall py-16 md:py-28">
       <Reveal>
         <SectionTitle
           overline="Collections"
           title="오늘은 어떤 식탁을 차릴까요"
           action={{ href: "/products", label: "전체 상품" }}
-          className="mb-10 md:mb-14"
+          className="mb-8 md:mb-12"
         />
       </Reveal>
 
@@ -113,7 +113,7 @@ export default function CategoryShowcase({ categories }: CategoryShowcaseProps) 
         {side.length > 0 && (
           <div className="grid content-start gap-3 md:col-span-5 md:gap-4">
             {side.map((cat, i) => (
-              <Reveal key={cat.id} delay={0.12 + i * 0.08}>
+              <Reveal key={cat.id} variant="clip-right" delay={0.16 + i * 0.12}>
                 <CategoryTile
                   category={cat}
                   index={i + 1}
@@ -133,7 +133,8 @@ export default function CategoryShowcase({ categories }: CategoryShowcaseProps) 
         {bottom.map((cat, i) => (
           <Reveal
             key={cat.id}
-            delay={0.12 + i * 0.08}
+            variant={i % 2 === 0 ? "clip-left" : "clip-right"}
+            delay={0.1 + i * 0.1}
             className={bottom.length === 1 ? "md:col-span-12" : "md:col-span-6"}
           >
             <CategoryTile

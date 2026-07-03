@@ -183,7 +183,7 @@ export default function TrackingSection({
                 type="button"
                 onClick={submit}
                 disabled={!valid || saving}
-                className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+                className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
               >
                 {saving ? "저장 중…" : shipment ? "저장" : "등록"}
               </button>
@@ -195,7 +195,7 @@ export default function TrackingSection({
                     setError(null);
                   }}
                   disabled={saving}
-                  className="border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+                  className="border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
                 >
                   취소
                 </button>

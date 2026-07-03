@@ -233,7 +233,7 @@ export default function CategoriesClient() {
                   onClick={() => void move(i, -1)}
                   disabled={i === 0}
                   aria-label={`${row.name} 위로 이동`}
-                  className="p-0.5 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
+                  className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
                 >
                   <ChevronUp size={16} strokeWidth={1.5} />
                 </button>
@@ -242,7 +242,7 @@ export default function CategoriesClient() {
                   onClick={() => void move(i, 1)}
                   disabled={i === (rows ?? []).length - 1}
                   aria-label={`${row.name} 아래로 이동`}
-                  className="p-0.5 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
+                  className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
                 >
                   <ChevronDown size={16} strokeWidth={1.5} />
                 </button>
@@ -292,7 +292,7 @@ export default function CategoriesClient() {
               <button
                 type="button"
                 onClick={() => openEdit(row)}
-                className="shrink-0 border border-ink-200 px-3 py-1.5 text-xs text-ink-600 transition-colors hover:bg-cream-100"
+                className="shrink-0 border border-ink-200 px-3 py-2 text-xs text-ink-600 transition-colors hover:bg-cream-100"
               >
                 수정
               </button>

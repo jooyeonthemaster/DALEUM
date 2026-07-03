@@ -3,14 +3,14 @@ export interface StoryBlockProps {
   className?: string;
 }
 
-type Block =
+export type StoryBlockNode =
   | { type: "heading"; text: string }
   | { type: "list"; items: string[] }
   | { type: "paragraph"; lines: string[] };
 
 /** 아주 단순한 마크다운 파서 — 제목(#/##/###)·목록(-)·문단/줄바꿈만 처리 */
-function parseStory(story: string): Block[] {
-  const blocks: Block[] = [];
+export function parseStory(story: string): StoryBlockNode[] {
+  const blocks: StoryBlockNode[] = [];
   let paragraph: string[] = [];
   let list: string[] = [];
 

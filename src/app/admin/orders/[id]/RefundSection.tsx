@@ -123,7 +123,7 @@ export default function RefundSection({
               type="button"
               onClick={() => setOpen(false)}
               disabled={busy}
-              className="border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               닫기
             </button>
@@ -131,7 +131,7 @@ export default function RefundSection({
               type="button"
               onClick={submit}
               disabled={!canSubmit}
-              className="bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
+              className="bg-signal-red px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
             >
               {busy ? "처리 중…" : isPending ? "취소 확정" : "환불 확정"}
             </button>

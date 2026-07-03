@@ -39,8 +39,8 @@ export const INVENTORY_REASON_LABELS: Record<string, string> = {
 
 /** 공용 버튼 클래스 (관리자 킷 가이드) */
 export const BTN_PRIMARY =
-  "bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50";
+  "bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50";
 export const BTN_GHOST =
-  "border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50";
+  "border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50";
 export const BTN_DANGER =
-  "bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50";
+  "bg-signal-red px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50";

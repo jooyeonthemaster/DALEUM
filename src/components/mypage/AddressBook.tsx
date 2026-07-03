@@ -223,7 +223,7 @@ export default function AddressBook() {
           <button
             type="button"
             onClick={openCreate}
-            className="border border-ink-900 px-4 py-2 text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50"
+            className="flex min-h-11 items-center border border-ink-900 px-5 text-[13px] text-ink-900 transition-colors hover:bg-ink-900 hover:text-cream-50 md:min-h-9 md:px-4"
           >
             새 배송지
           </button>
@@ -243,17 +243,18 @@ export default function AddressBook() {
           ))}
         </div>
       ) : list.length === 0 ? (
-        <div className="border border-ink-200 px-6 py-16 text-center">
-          <p className="headline-serif text-lg text-ink-900">
+        <div className="border border-ink-200 px-6 py-14 text-center md:py-16">
+          <span className="mx-auto mb-6 block h-8 w-px bg-ink-300" aria-hidden />
+          <p className="headline-serif text-balance text-lg text-ink-900 md:text-xl">
             저장된 배송지가 아직 없습니다.
           </p>
-          <p className="mt-3 text-sm text-ink-500">
+          <p className="mx-auto mt-3 max-w-xs text-balance text-sm leading-relaxed text-ink-500">
             자주 쓰는 주소를 등록해 두면 주문이 한결 빨라집니다.
           </p>
           <button
             type="button"
             onClick={openCreate}
-            className="label-caps mt-8 inline-block border border-ink-900 px-9 py-3.5 text-ink-900 transition-colors duration-500 hover:bg-ink-900 hover:text-cream-50"
+            className="label-caps mt-8 inline-flex min-h-11 items-center border border-ink-900 px-8 text-ink-900 transition-colors duration-500 hover:bg-ink-900 hover:text-cream-50"
           >
             배송지 추가
           </button>
@@ -278,12 +279,12 @@ export default function AddressBook() {
                 <span className="krw text-ink-400">({addr.postcode})</span> {addr.address1}{" "}
                 {addr.address2}
               </p>
-              <div className="mt-4 flex items-center gap-4 border-t border-ink-100 pt-3.5 text-xs">
+              <div className="mt-4 flex items-center gap-3 border-t border-ink-100 pt-1.5 text-xs">
                 {!addr.is_default && (
                   <button
                     type="button"
                     onClick={() => setDefault(addr)}
-                    className="text-forest-700 transition-colors hover:text-forest-800"
+                    className="-mx-1 px-1 py-2.5 text-forest-700 transition-colors hover:text-forest-800"
                   >
                     기본으로 설정
                   </button>
@@ -291,14 +292,14 @@ export default function AddressBook() {
                 <button
                   type="button"
                   onClick={() => openEdit(addr)}
-                  className="text-ink-500 transition-colors hover:text-ink-900"
+                  className="-mx-1 px-1 py-2.5 text-ink-500 transition-colors hover:text-ink-900"
                 >
                   수정
                 </button>
                 <button
                   type="button"
                   onClick={() => setDeleting(addr)}
-                  className="text-ink-500 transition-colors hover:text-signal-red"
+                  className="-mx-1 px-1 py-2.5 text-ink-500 transition-colors hover:text-signal-red"
                 >
                   삭제
                 </button>
@@ -319,7 +320,7 @@ export default function AddressBook() {
               type="button"
               onClick={closeForm}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               취소
             </button>
@@ -327,7 +328,7 @@ export default function AddressBook() {
               type="submit"
               form="address-form"
               disabled={busy}
-              className="bg-forest-700 px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+              className="h-11 bg-forest-700 px-5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
               {busy ? "저장 중…" : "저장"}
             </button>
@@ -431,7 +432,7 @@ export default function AddressBook() {
             onClick={() => setForm((f) => ({ ...f, is_default: !f.is_default }))}
             disabled={list.length === 0 || (list.length === 1 && list[0].id === form.id)}
             aria-pressed={form.is_default}
-            className="flex items-center gap-2.5 text-left disabled:opacity-60"
+            className="flex min-h-11 items-center gap-2.5 text-left disabled:opacity-60"
           >
             <span
               aria-hidden
@@ -465,7 +466,7 @@ export default function AddressBook() {
               type="button"
               onClick={() => setDeleting(null)}
               disabled={busy}
-              className="border border-ink-200 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
+              className="h-11 border border-ink-200 px-5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
             >
               취소
             </button>
@@ -473,7 +474,7 @@ export default function AddressBook() {
               type="button"
               onClick={remove}
               disabled={busy}
-              className="bg-signal-red px-4 py-2 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
+              className="h-11 bg-signal-red px-5 text-sm text-cream-50 transition-colors hover:bg-[#9c3c27] disabled:opacity-50"
             >
               {busy ? "삭제 중…" : "삭제"}
             </button>

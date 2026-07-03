@@ -1,5 +1,6 @@
 import Image from "next/image";
 import Link from "next/link";
+import Parallax from "@/components/shop/Parallax";
 import Reveal from "@/components/shop/Reveal";
 
 const STATS: { value: string; unit?: string; label: string; note: string }[] = [
@@ -29,7 +30,7 @@ const STATS: { value: string; unit?: string; label: string; note: string }[] = [
 export default function FermentStory() {
   return (
     <section className="bg-forest-950 text-cream-50">
-      <div className="container-hall py-24 md:py-36">
+      <div className="container-hall py-20 md:py-32">
         <div className="grid items-center gap-12 md:grid-cols-2 md:gap-20">
           <div>
             <Reveal>
@@ -60,25 +61,36 @@ export default function FermentStory() {
             </Reveal>
           </div>
 
-          <Reveal variant="clip" className="relative aspect-[4/5] overflow-hidden rounded-sm md:aspect-[5/6]">
-            <Image
-              src="/editorial/noodle-closeup.jpg"
-              alt="발효를 마친 곤약면 클로즈업"
-              fill
-              sizes="(min-width: 768px) 50vw, 100vw"
-              className="object-cover"
-            />
+          <Reveal
+            variant="clip"
+            className="relative aspect-[4/5] overflow-hidden rounded-sm md:aspect-[5/6]"
+          >
+            <Parallax speed={44} className="h-full w-full">
+              <Image
+                src="/editorial/noodle-closeup.jpg"
+                alt="발효를 마친 곤약면 클로즈업"
+                fill
+                sizes="(min-width: 768px) 50vw, 100vw"
+                className="scale-110 object-cover"
+              />
+            </Parallax>
           </Reveal>
         </div>
 
-        {/* 수치 스탯 */}
-        <div className="mt-16 grid gap-10 border-t border-cream-50/15 pt-12 sm:grid-cols-3 md:mt-24 md:gap-8">
+        {/* 수치 스탯 — 헤어라인이 좌→우로 그어진 뒤 숫자가 순서대로 떠오른다 */}
+        <Reveal
+          variant="rule"
+          className="mt-14 h-px w-full bg-cream-50/15 md:mt-24"
+        />
+        <div className="grid gap-9 pt-10 sm:grid-cols-3 md:gap-8 md:pt-12">
           {STATS.map((stat, i) => (
-            <Reveal key={stat.label} delay={i * 0.1}>
-              <p className="headline-serif krw text-4xl text-cream-50 md:text-[3.25rem] md:leading-none">
+            <Reveal key={stat.label} delay={0.12 + i * 0.1}>
+              <p className="headline-serif krw text-4xl text-cream-50 md:text-[2.5rem] md:leading-none lg:text-[3.25rem]">
                 {stat.value}
                 {stat.unit && (
-                  <span className="ml-1.5 text-lg md:text-xl">{stat.unit}</span>
+                  <span className="ml-1.5 whitespace-nowrap text-lg md:text-xl">
+                    {stat.unit}
+                  </span>
                 )}
               </p>
               <p className="label-caps mt-4 text-forest-300">{stat.label}</p>

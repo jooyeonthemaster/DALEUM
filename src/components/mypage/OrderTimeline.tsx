@@ -28,7 +28,7 @@ export default function OrderTimeline({ status, className = "" }: OrderTimelineP
         const done = i <= current;
         const isCurrent = i === current;
         return (
-          <li key={label} className="relative flex-1">
+          <li key={label} className="relative min-w-0 flex-1">
             {i > 0 && (
               <span
                 aria-hidden
@@ -39,12 +39,16 @@ export default function OrderTimeline({ status, className = "" }: OrderTimelineP
             )}
             <span
               aria-hidden
-              className={`relative z-10 mx-auto block h-[9px] w-[9px] rounded-full ${
-                done ? "bg-forest-600" : "border border-ink-300 bg-cream-50"
+              className={`relative z-10 mx-auto block rounded-full ${
+                isCurrent
+                  ? "h-[11px] w-[11px] -my-px bg-forest-600 outline outline-4 outline-forest-600/15"
+                  : done
+                    ? "h-[9px] w-[9px] bg-forest-600"
+                    : "h-[9px] w-[9px] border border-ink-300 bg-cream-50"
               }`}
             />
             <span
-              className={`mt-2.5 block text-center text-[11px] md:text-xs ${
+              className={`mt-2.5 block break-keep px-0.5 text-center text-[11px] leading-tight md:text-xs ${
                 done
                   ? isCurrent
                     ? "font-semibold text-ink-900"

@@ -3,6 +3,8 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import Reveal from "@/components/shop/Reveal";
+import RevealText from "@/components/shop/RevealText";
 import MypageNav from "@/components/mypage/MypageNav";
 
 export const metadata: Metadata = { title: "마이페이지" };
@@ -50,24 +52,36 @@ export default async function MypageLayout({ children }: { children: ReactNode }
   return (
     <div className="container-hall flex-1 pb-24 pt-10 md:pb-32 md:pt-14">
       <header className="mb-8 md:mb-12">
-        <p className="label-caps text-forest-600">My Page</p>
+        <Reveal as="p" variant="fade" className="label-caps text-forest-600">
+          My Page
+        </Reveal>
         <div className="mt-3 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <Link href="/mypage">
-            <h1 className="headline-serif text-3xl text-ink-900 md:text-4xl">
-              {name}님의 페이지
-            </h1>
+            <RevealText
+              as="h1"
+              className="headline-serif text-3xl text-ink-900 md:text-4xl"
+              text={`${name}님의 페이지`}
+              delay={0.08}
+            />
           </Link>
           {vipGroupName && (
-            <span className="flex items-center gap-2 text-[13px] text-brass-700">
+            <Reveal
+              as="span"
+              variant="fade"
+              delay={0.3}
+              className="flex items-center gap-2 text-[13px] text-brass-700"
+            >
               <span className="h-[7px] w-[7px] rounded-full bg-brass-500" aria-hidden />
               {vipGroupName} 멤버
-            </span>
+            </Reveal>
           )}
         </div>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[13rem_minmax(0,1fr)]">
-        <MypageNav />
+      <div className="grid gap-8 overflow-x-clip lg:grid-cols-[12rem_minmax(0,1fr)] lg:gap-14 xl:grid-cols-[13rem_minmax(0,1fr)]">
+        <Reveal variant="left" delay={0.1} className="min-w-0">
+          <MypageNav />
+        </Reveal>
         <div className="min-w-0">{children}</div>
       </div>
     </div>

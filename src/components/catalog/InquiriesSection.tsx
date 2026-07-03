@@ -176,7 +176,7 @@ export default function InquiriesSection({
               <p className="mt-2 text-[13px] text-forest-700">{doneMessage}</p>
             )}
             <div className="mt-3 flex items-center justify-between gap-4">
-              <label className="flex cursor-pointer items-center gap-2 text-[13px] text-ink-600">
+              <label className="flex cursor-pointer items-center gap-2 py-3 text-[13px] text-ink-600">
                 <input
                   type="checkbox"
                   checked={isPrivate}
@@ -189,7 +189,7 @@ export default function InquiriesSection({
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="bg-forest-700 px-6 py-2.5 text-sm font-medium text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+                className="bg-forest-700 px-7 py-3 text-sm font-medium text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
               >
                 {submitting ? "등록 중…" : "문의 등록"}
               </button>

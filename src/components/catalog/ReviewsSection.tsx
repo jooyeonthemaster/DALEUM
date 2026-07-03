@@ -7,6 +7,7 @@ import { useMemo, useState } from "react";
 import { Star } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import { formatDate } from "@/lib/format";
+import Reveal from "@/components/shop/Reveal";
 
 export interface ReviewItem {
   id: string;
@@ -127,7 +128,7 @@ export default function ReviewsSection({
       {/* ---------- 평점 요약 ---------- */}
       {stats.total > 0 ? (
         <div className="flex flex-col gap-8 sm:flex-row sm:items-center sm:gap-14">
-          <div className="shrink-0 text-center sm:text-left">
+          <Reveal variant="left" className="shrink-0 text-center sm:text-left">
             <p className="headline-serif text-5xl text-ink-900">
               {stats.average.toFixed(1)}
             </p>
@@ -137,8 +138,13 @@ export default function ReviewsSection({
             <p className="krw mt-2 text-[13px] text-ink-500">
               {stats.total}개의 리뷰
             </p>
-          </div>
-          <ul className="w-full max-w-sm space-y-2">
+          </Reveal>
+          <Reveal
+            as="ul"
+            variant="right"
+            delay={0.1}
+            className="w-full max-w-sm space-y-2"
+          >
             {[5, 4, 3, 2, 1].map((score) => {
               const count = stats.dist[score - 1];
               const ratio = stats.total > 0 ? (count / stats.total) * 100 : 0;
@@ -160,12 +166,14 @@ export default function ReviewsSection({
                 </li>
               );
             })}
-          </ul>
+          </Reveal>
         </div>
       ) : (
-        <p className="headline-serif text-lg text-ink-600">
-          아직 작성된 리뷰가 없습니다. 첫 번째 이야기를 남겨 주세요.
-        </p>
+        <Reveal variant="fade">
+          <p className="headline-serif text-lg text-ink-600">
+            아직 작성된 리뷰가 없습니다. 첫 번째 이야기를 남겨 주세요.
+          </p>
+        </Reveal>
       )}
 
       {/* ---------- 리뷰 목록 ---------- */}
@@ -260,7 +268,7 @@ export default function ReviewsSection({
                     aria-checked={rating === n}
                     aria-label={`${n}점`}
                     onClick={() => setRating(n)}
-                    className="p-0.5"
+                    className="-m-1.5 p-3"
                   >
                     <Star
                       size={20}
@@ -293,7 +301,7 @@ export default function ReviewsSection({
                 type="button"
                 onClick={handleSubmit}
                 disabled={submitting}
-                className="bg-forest-700 px-6 py-2.5 text-sm font-medium text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
+                className="bg-forest-700 px-7 py-3 text-sm font-medium text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
               >
                 {submitting ? "등록 중…" : "리뷰 등록"}
               </button>

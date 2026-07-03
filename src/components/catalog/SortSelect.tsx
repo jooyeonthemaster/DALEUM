@@ -36,7 +36,7 @@ export default function SortSelect({
         value={sort}
         onChange={(e) => handleChange(e.target.value)}
         aria-label="정렬 기준"
-        className="cursor-pointer appearance-none bg-transparent pr-5 text-[13px] text-ink-700 outline-none transition-colors hover:text-ink-900"
+        className="cursor-pointer appearance-none bg-transparent py-3 pr-5 text-[13px] text-ink-700 outline-none transition-colors hover:text-ink-900"
       >
         {SORT_ORDER.map((key) => (
           <option key={key} value={key}>

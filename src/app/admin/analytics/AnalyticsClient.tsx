@@ -286,7 +286,7 @@ export default function AnalyticsClient() {
               type="button"
               onClick={() => changeDays(d)}
               aria-pressed={days === d}
-              className={`px-4 py-2 text-sm transition-colors ${
+              className={`px-4 py-2.5 text-sm transition-colors ${
                 days === d
                   ? "bg-forest-700 font-semibold text-cream-50"
                   : "bg-cream-50 text-ink-600 hover:bg-cream-100"
@@ -304,7 +304,7 @@ export default function AnalyticsClient() {
           <button
             type="button"
             onClick={retry}
-            className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2 text-sm text-ink-700 transition-colors hover:bg-cream-100"
+            className="mt-6 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100"
           >
             다시 불러오기
           </button>

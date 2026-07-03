@@ -41,14 +41,17 @@ export default function Pagination({ page, totalPages, onChange, className = "" 
         onClick={() => onChange(page - 1)}
         disabled={page <= 1}
         aria-label="이전 페이지"
-        className="flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-cream-100 disabled:pointer-events-none disabled:opacity-30"
+        className="flex h-10 w-10 items-center justify-center text-ink-600 transition-colors hover:bg-cream-100 disabled:pointer-events-none disabled:opacity-30 sm:h-8 sm:w-8"
       >
         <ChevronLeft size={16} strokeWidth={1.5} />
       </button>
 
       {pages.map((p, i) =>
         p === "ellipsis" ? (
-          <span key={`e-${i}`} className="flex h-8 w-8 items-end justify-center pb-1.5 text-ink-300">
+          <span
+            key={`e-${i}`}
+            className="flex h-10 w-10 items-end justify-center pb-1.5 text-ink-300 sm:h-8 sm:w-8"
+          >
             …
           </span>
         ) : (
@@ -58,7 +61,7 @@ export default function Pagination({ page, totalPages, onChange, className = "" 
             onClick={() => onChange(p)}
             aria-label={`${p}페이지`}
             aria-current={p === page ? "page" : undefined}
-            className={`h-8 w-8 text-sm krw transition-colors ${
+            className={`h-10 w-10 text-sm krw transition-colors sm:h-8 sm:w-8 ${
               p === page
                 ? "bg-forest-800 font-semibold text-cream-50"
                 : "text-ink-600 hover:bg-cream-100"
@@ -74,7 +77,7 @@ export default function Pagination({ page, totalPages, onChange, className = "" 
         onClick={() => onChange(page + 1)}
         disabled={page >= totalPages}
         aria-label="다음 페이지"
-        className="flex h-8 w-8 items-center justify-center text-ink-600 transition-colors hover:bg-cream-100 disabled:pointer-events-none disabled:opacity-30"
+        className="flex h-10 w-10 items-center justify-center text-ink-600 transition-colors hover:bg-cream-100 disabled:pointer-events-none disabled:opacity-30 sm:h-8 sm:w-8"
       >
         <ChevronRight size={16} strokeWidth={1.5} />
       </button>

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useRef, useState, type CSSProperties } from "react";
 import Image from "next/image";
 import Link from "next/link";
 
@@ -75,19 +75,21 @@ export default function HomeHero({ banner }: HomeHeroProps) {
 
   return (
     <section className="relative -mt-16 flex min-h-svh flex-col justify-end overflow-hidden bg-forest-950 md:-mt-20">
-      {/* 배경 사진 — 위로 22% 확장해 패럴랙스 이동분을 확보 */}
+      {/* 배경 사진 — 위로 22% 확장해 패럴랙스 이동분을 확보, 진입 시 켄번즈 줌 */}
       <div
         ref={bgRef}
         className="absolute inset-x-0 -top-[22%] bottom-0 will-change-transform"
       >
-        <Image
-          src={imageUrl}
-          alt=""
-          fill
-          priority
-          sizes="100vw"
-          className="object-cover"
-        />
+        <div className="hero-kenburns h-full w-full">
+          <Image
+            src={imageUrl}
+            alt=""
+            fill
+            priority
+            sizes="100vw"
+            className="object-cover"
+          />
+        </div>
       </div>
 
       {/* 스크림 — 상단(투명 헤더)과 하단(카피)을 어둡게 */}
@@ -101,12 +103,40 @@ export default function HomeHero({ banner }: HomeHeroProps) {
           Fermented Konjac · Since 2019
         </p>
 
-        <h1 className="headline-serif mt-6 text-[2.5rem] leading-[1.16] text-cream-50 sm:text-5xl md:text-6xl lg:text-[4.25rem]">
-          {titleLines.map((line, i) => (
-            <span key={i} className={`${reveal} block`} style={delay(0.15 + i * 0.14)}>
-              {line}
-            </span>
-          ))}
+        {/* 모바일에선 줄 구분 없이 자연스럽게 흐르고(어절 단위 wrap), sm+부터 의도한 행 분리.
+            어절 사이 공백은 반드시 span "바깥"에 둔다 — inline-block 내부 꼬리 공백은 렌더링에서 잘려
+            단어가 전부 붙어 보인다. */}
+        <h1
+          className={`headline-serif reveal-words${mounted ? " is-inview" : ""} mt-6 text-[2rem] leading-[1.22] text-cream-50 sm:text-5xl sm:leading-[1.16] md:text-6xl lg:text-[4.25rem]`}
+          aria-label={titleLines.join(" ")}
+        >
+          {(() => {
+            let w = 0;
+            return titleLines.map((line, i) => (
+              <Fragment key={i}>
+                <span className="sm:block">
+                  {line
+                    .split(/\s+/)
+                    .filter(Boolean)
+                    .map((word, wi) => {
+                      const d = 0.18 + w * 0.09;
+                      w += 1;
+                      return (
+                        <Fragment key={wi}>
+                          <span
+                            aria-hidden
+                            className="reveal-word"
+                            style={{ "--word-delay": `${d}s` } as CSSProperties}
+                          >
+                            {word}
+                          </span>{" "}
+                        </Fragment>
+                      );
+                    })}
+                </span>{" "}
+              </Fragment>
+            ));
+          })()}
         </h1>
 
         <p

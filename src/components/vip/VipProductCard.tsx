@@ -2,6 +2,7 @@ import Image from "next/image";
 import Link from "next/link";
 import type { ProductWithImages } from "@/lib/types";
 import { STORAGE_TYPE_LABELS } from "@/lib/constants";
+import Reveal from "@/components/shop/Reveal";
 import VipPrice from "./VipPrice";
 import VipAddToCartButton from "./VipAddToCartButton";
 
@@ -18,6 +19,10 @@ export interface VipProductCardProps {
   campaignId?: string;
   /** 첫 화면 카드만 true (next/image priority) */
   priority?: boolean;
+  /** true면 이미지가 커튼(clip)으로 걷히며 등장 — 그리드 스태거와 함께 사용 */
+  revealImage?: boolean;
+  /** 이미지 커튼 등장 지연(초) — 카드 래퍼 리빌보다 살짝 늦게 */
+  revealDelay?: number;
   className?: string;
 }
 
@@ -33,6 +38,8 @@ export default function VipProductCard({
   markLabel = "VIP",
   campaignId,
   priority = false,
+  revealImage = false,
+  revealDelay = 0,
   className = "",
 }: VipProductCardProps) {
   const images = [...(product.product_images ?? [])].sort((a, b) => a.sort_order - b.sort_order);
@@ -47,47 +54,57 @@ export default function VipProductCard({
   // (상세 페이지로 이동하면 캠페인 컨텍스트가 사라진다)
   const directAdd = !hasVariants || Boolean(campaignId);
 
+  const showcase = (
+    <div className="showcase-img relative aspect-[4/5] overflow-hidden rounded-sm bg-forest-900">
+      {primary ? (
+        <Image
+          src={primary.url}
+          alt={primary.alt ?? product.name}
+          fill
+          priority={priority}
+          sizes="(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw"
+          className="object-cover"
+        />
+      ) : (
+        <div className="flex h-full w-full items-center justify-center">
+          <span className="label-caps text-cream-50/25">Daleum</span>
+        </div>
+      )}
+
+      {badges.length > 0 && (
+        <div className="absolute left-3 top-3 flex gap-1.5">
+          {badges.map((badge) => (
+            <span
+              key={badge}
+              className="label-caps bg-forest-950/85 px-2 py-1 text-[10px] text-brass-300"
+            >
+              {badge}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {soldOut && (
+        <div className="absolute inset-0 flex items-center justify-center bg-forest-950/70">
+          <span className="label-caps border border-cream-50/70 px-4 py-2 text-cream-50">
+            일시품절
+          </span>
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className={`group flex flex-col ${className}`}>
       <Link href={`/products/${product.slug}`} className="block">
-        {/* 4:5 쇼케이스 이미지 */}
-        <div className="showcase-img relative aspect-[4/5] overflow-hidden rounded-sm bg-forest-900">
-          {primary ? (
-            <Image
-              src={primary.url}
-              alt={primary.alt ?? product.name}
-              fill
-              priority={priority}
-              sizes="(min-width: 1280px) 25vw, (min-width: 768px) 33vw, 50vw"
-              className="object-cover"
-            />
-          ) : (
-            <div className="flex h-full w-full items-center justify-center">
-              <span className="label-caps text-cream-50/25">Daleum</span>
-            </div>
-          )}
-
-          {badges.length > 0 && (
-            <div className="absolute left-3 top-3 flex gap-1.5">
-              {badges.map((badge) => (
-                <span
-                  key={badge}
-                  className="label-caps bg-forest-950/85 px-2 py-1 text-[10px] text-brass-300"
-                >
-                  {badge}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {soldOut && (
-            <div className="absolute inset-0 flex items-center justify-center bg-forest-950/70">
-              <span className="label-caps border border-cream-50/70 px-4 py-2 text-cream-50">
-                일시품절
-              </span>
-            </div>
-          )}
-        </div>
+        {/* 4:5 쇼케이스 이미지 — revealImage면 커튼이 걷히듯 등장 (clip은 직계 자식 하나) */}
+        {revealImage ? (
+          <Reveal variant="clip" delay={revealDelay}>
+            {showcase}
+          </Reveal>
+        ) : (
+          showcase
+        )}
 
         {/* 정보 */}
         <div className="pt-4">
@@ -121,7 +138,7 @@ export default function VipProductCard({
         {!directAdd && !soldOut ? (
           <Link
             href={`/products/${product.slug}`}
-            className="flex h-10 w-full items-center justify-center border border-cream-50/20 text-[13px] text-cream-100 transition-colors duration-300 ease-hall hover:border-brass-300 hover:text-brass-300"
+            className="flex h-11 w-full items-center justify-center border border-cream-50/20 text-[13px] text-cream-100 transition-colors duration-300 ease-hall hover:border-brass-300 hover:text-brass-300"
           >
             옵션 선택하기
           </Link>
