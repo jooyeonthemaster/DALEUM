@@ -11,6 +11,7 @@ import { Select } from "@/components/admin/Field";
 import { krw, formatDate } from "@/lib/format";
 import type { Category, ProductStatus, ProductWithImages } from "@/lib/types";
 import {
+  BTN_GHOST,
   BTN_PRIMARY,
   PRODUCT_STATUS_OPTIONS,
   PRODUCT_STATUS_TONES,
@@ -280,6 +281,9 @@ export default function ProductsClient() {
               </option>
             ))}
           </Select>
+          <Link href="/admin/products/bulk" className={`${BTN_GHOST} whitespace-nowrap`}>
+            일괄 등록
+          </Link>
           <Link href="/admin/products/new" className={`${BTN_PRIMARY} whitespace-nowrap`}>
             새 상품
           </Link>
