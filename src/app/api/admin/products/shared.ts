@@ -11,7 +11,8 @@ export const STORAGE_TYPES = ["room", "chilled", "frozen"] as const;
 /** 검증 실패 — 메시지는 그대로 사용자에게 노출 가능한 한국어 */
 export class InputError extends Error {}
 
-const SLUG_RE = /^[a-z0-9가-힣]+(?:-[a-z0-9가-힣]+)*$/;
+// 한글 slug 는 라우트에서 퍼센트 인코딩된 채 조회돼 상세페이지가 404 가 된다 — ASCII 만 허용한다.
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 function intField(
   v: unknown,

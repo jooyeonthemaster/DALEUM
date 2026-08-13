@@ -25,7 +25,8 @@ import {
 } from "./form-types";
 import { slugify } from "@/lib/format";
 
-const SLUG_RE = /^[a-z0-9가-힣]+(?:-[a-z0-9가-힣]+)*$/;
+// 한글 slug 는 라우트에서 퍼센트 인코딩된 채 조회돼 상세페이지가 404 가 된다 — ASCII 만 허용한다.
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 interface DetailResponse {
   product: ProductWithImages;

@@ -4,7 +4,8 @@ import { cleanStr } from "@/lib/orders";
    관리자 카테고리 API 공용 — 입력 정제
    ============================================================ */
 
-const SLUG_RE = /^[a-z0-9가-힣]+(?:-[a-z0-9가-힣]+)*$/;
+// 한글 slug 는 라우트에서 퍼센트 인코딩된 채 조회돼 상세페이지가 404 가 된다 — ASCII 만 허용한다.
+const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 /** 카테고리 입력 정제 — partial이면 전달된 필드만 */
 export function parseCategoryFields(

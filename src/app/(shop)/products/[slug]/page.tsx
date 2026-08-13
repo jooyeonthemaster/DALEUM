@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { resolvePrice } from "@/lib/pricing";
@@ -18,7 +19,9 @@ import SectionTitle from "@/components/shop/SectionTitle";
 import Reveal from "@/components/shop/Reveal";
 import RevealText from "@/components/shop/RevealText";
 import Gallery from "@/components/catalog/Gallery";
-import DescriptionBlock from "@/components/catalog/DescriptionBlock";
+import DescriptionBlock, {
+  hasDescriptionImages,
+} from "@/components/catalog/DescriptionBlock";
 import AddToCart, {
   type PurchaseOption,
   type SpecRow,
@@ -44,7 +47,24 @@ type Params = Promise<{ slug: string }>;
 
 const PAID_STATUSES = ["paid", "preparing", "shipped", "delivered", "confirmed"];
 
-const getProduct = cache(async (slug: string) => {
+/**
+ * 라우트 params.slug 를 DB에 저장된 형태로 정규화한다.
+ * 같은 요청 안에서도 generateMetadata 는 디코딩된 값("맛있는여주발효곤약밥")을,
+ * 페이지 컴포넌트는 퍼센트 인코딩된 원문("%EB%A7%9B…")을 받기 때문에
+ * 인코딩 원문을 그대로 조회하면 non-ASCII slug 상품이 404가 된다.
+ * ASCII slug 에는 '%' 가 없으므로 그대로 통과하며 동작이 달라지지 않는다.
+ */
+function normalizeSlug(slug: string): string {
+  if (!slug.includes("%")) return slug;
+  try {
+    return decodeURIComponent(slug);
+  } catch {
+    // 잘못된 퍼센트 시퀀스는 URIError 를 던진다 — 원문 그대로 조회해 404로 흘려보낸다.
+    return slug;
+  }
+}
+
+const fetchProductBySlug = cache(async (slug: string) => {
   const supabase = await createClient();
   const { data } = await supabase
     .from("products")
@@ -54,6 +74,14 @@ const getProduct = cache(async (slug: string) => {
     .maybeSingle();
   return data as unknown as ProductWithImages | null;
 });
+
+/**
+ * 정규화된 slug 로만 cache() 키가 잡히므로 generateMetadata 와 페이지 컴포넌트가
+ * 서로 다른 형태(디코딩/인코딩)를 받아도 같은 상품을 얻고, 요청당 조회는 1회로 유지된다.
+ */
+function getProduct(slug: string) {
+  return fetchProductBySlug(normalizeSlug(slug));
+}
 
 function maskName(name: string | null | undefined): string {
   const trimmed = name?.trim();
@@ -199,7 +227,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
       .eq("product_id", product.id)
       .order("created_at", { ascending: false })
       .limit(100),
-    getShippingSettings(supabase),
+    getShippingSettings(supabase as unknown as SupabaseClient),
   ]);
 
   const reviews: ReviewItem[] = (
@@ -350,7 +378,11 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                 </div>
               )}
               {product.description && (
-                <DescriptionBlock text={product.description} className="mt-5" />
+                <DescriptionBlock
+                  text={product.description}
+                  className="mt-5"
+                  only="text"
+                />
               )}
             </Reveal>
 
@@ -384,6 +416,23 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
 
         {/* ---------- 상세 섹션 ---------- */}
         <div className="mx-auto mt-20 max-w-3xl md:mt-28">
+          {/* 상품 상세 이미지 — 세로 수천 px 이라 구매 박스가 아니라 여기서 전체폭으로 편다 */}
+          {product.description && hasDescriptionImages(product.description) && (
+            <section>
+              <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
+              <div className="py-14 md:py-16">
+                <Reveal variant="fade">
+                  <SectionTitle
+                    overline="Detail"
+                    title="상품 상세"
+                    className="mb-8"
+                  />
+                </Reveal>
+                <DescriptionBlock text={product.description} only="images" />
+              </div>
+            </section>
+          )}
+
           {/* 에디토리얼 스토리 */}
           {product.story && (
             <section>
