@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getShippingSettings } from "@/lib/shipping";
 import type { Address } from "@/lib/types";
@@ -45,7 +46,7 @@ export default async function CheckoutPage() {
     addresses = (addressesResult.data ?? []) as Address[];
   }
 
-  const shipping = await getShippingSettings(supabase);
+  const shipping = await getShippingSettings(supabase as unknown as SupabaseClient);
 
   return (
     <CheckoutForm user={user} profile={profile} addresses={addresses} shipping={shipping} />

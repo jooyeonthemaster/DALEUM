@@ -63,7 +63,8 @@ export async function POST(req: Request) {
       ? prefixRaw.replace(/[^a-zA-Z0-9/_-]/g, "").replace(/^\/+|\/+$/g, "")
       : "";
 
-  const path = `${prefix ? `${prefix}/` : ""}${randomUUID()}.${ext}`;
+  // 공유 버킷 — 스토어 스코프 프리픽스(daleum/) 필수 (suhn/tomato와 버킷 공유)
+  const path = `daleum/${prefix ? `${prefix}/` : ""}${randomUUID()}.${ext}`;
 
   const bytes = await file.arrayBuffer();
   const { error: uploadError } = await service.storage

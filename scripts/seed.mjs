@@ -30,7 +30,11 @@ const SUPABASE_URL = env.NEXT_PUBLIC_SUPABASE_URL || 'https://swieykjfdcsscmzcst
 const SERVICE_KEY = env.SUPABASE_SERVICE_ROLE_KEY;
 if (!SERVICE_KEY) throw new Error('.env.local에 SUPABASE_SERVICE_ROLE_KEY가 없습니다');
 
-const db = createClient(SUPABASE_URL, SERVICE_KEY, { auth: { persistSession: false, autoRefreshToken: false } });
+// site 프로젝트 공유 DB — DALEUM은 daleum 스키마 (public은 suhn 소유)
+const db = createClient(SUPABASE_URL, SERVICE_KEY, {
+  db: { schema: 'daleum' },
+  auth: { persistSession: false, autoRefreshToken: false },
+});
 
 // ---------- 이미지 소스 디렉터리 (크롤/브로슈어 산출물 — 로컬에 있을 때만 업로드) ----------
 const SCRATCH = 'C:/Users/jooye/AppData/Local/Temp/claude/c--Users-jooye-Desktop-2026project-DALEUM/1ae05434-f2ac-47a9-ac61-1d66ca741926/scratchpad';
@@ -452,7 +456,7 @@ async function main() {
     if (missing.length) console.warn(`[WARN] ${p.slug}: 이미지 ${missing.length}개 소스 파일 없음 — 건너뜀`);
     const rows = [];
     for (let i = 0; i < files.length; i++) {
-      const storagePath = `${p.slug}/${i + 1}.jpg`;
+      const storagePath = `daleum/${p.slug}/${i + 1}.jpg`; // 공유 버킷 — daleum/ 프리픽스 필수
       const buf = readFileSync(files[i]);
       const { error: upErr } = await db.storage.from('products').upload(storagePath, buf, {
         contentType: 'image/jpeg', upsert: true,

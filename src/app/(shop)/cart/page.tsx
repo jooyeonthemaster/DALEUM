@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { getShippingSettings } from "@/lib/shipping";
 import CartView from "@/components/checkout/CartView";
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 /** 장바구니 — 배송비 설정만 서버에서 읽어 클라이언트 뷰에 전달 */
 export default async function CartPage() {
   const supabase = await createClient();
-  const shipping = await getShippingSettings(supabase);
+  const shipping = await getShippingSettings(supabase as unknown as SupabaseClient);
 
   return <CartView shipping={shipping} />;
 }
