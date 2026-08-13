@@ -26,7 +26,9 @@ function LenisController() {
       duration: 1.1,
       easing: (t: number) => Math.min(1, 1.001 - Math.pow(2, -10 * t)),
       smoothWheel: true,
-      anchors: true,
+      // anchors 는 아래에서 직접 처리한다 (lenis 내장 처리는 네이티브 점프와
+      // 충돌해 목표 지점보다 앞에서 멈춘다 — 거리에 비례해 최대 900px 오차)
+      anchors: false,
       // 다른 경로로 이동하는 링크 클릭 시점에 관성을 끊는다.
       // (아래 라우트 변경 effect보다 먼저 걸리는 1차 방어선)
       stopInertiaOnNavigate: true,
@@ -44,6 +46,62 @@ function LenisController() {
       lenisRef.current = null;
       html.style.scrollBehavior = prevScrollBehavior;
     };
+  }, []);
+
+  /**
+   * 같은 페이지 내 앵커(`#id`) 링크를 직접 처리한다.
+   *
+   * lenis의 anchors 옵션에 맡기면, lenis가 스크롤 애니메이션을 시작한 직후
+   * 브라우저의 네이티브 앵커 점프가 같은 클릭에서 실행되면서 서로를 덮어쓴다.
+   * 그 결과 lenis가 목표를 잃고 거리에 비례해 모자란 지점에서 멈춘다.
+   * (실측: 목표 8972 → 8096, 876px 부족)
+   *
+   * 기본 동작을 막아 네이티브 점프를 없애면 충돌 자체가 사라진다.
+   */
+  useEffect(() => {
+    const onAnchorClick = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0) return;
+      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+
+      const lenis = lenisRef.current;
+      if (!lenis) return; // reduced-motion — 네이티브 앵커 점프가 정확하므로 그대로 둔다
+
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      const anchor = target.closest("a[href]");
+      if (!anchor) return;
+
+      const href = anchor.getAttribute("href");
+      if (!href || href === "#" || !href.startsWith("#")) return;
+
+      const id = decodeURIComponent(href.slice(1));
+      const el = document.getElementById(id);
+      if (!el) return;
+
+      event.preventDefault();
+
+      // 목표 위치를 직접 계산한다. window.scrollY 는 언제나 실제 값이다.
+      const scrollMarginTop =
+        Number.parseFloat(getComputedStyle(el).scrollMarginTop) || 0;
+      const top =
+        el.getBoundingClientRect().top + window.scrollY - scrollMarginTop;
+
+      // lenis.scrollTo 는 이 시점에 내부 상태가 어긋나 엉뚱한 곳으로 보낸다
+      // (실측: 목표 8860 → 즉시 764로 이동). 브라우저 네이티브 부드러운
+      // 스크롤은 항상 정확하므로 그쪽에 맡긴다.
+      //
+      // stop()→start() 는 진행 중이던 관성만 폐기한다. lenis 를 멈춘 채로 두면
+      // (isStopped) 휠 이벤트를 preventDefault 만 하고 무시해 페이지가 얼어붙는다.
+      lenis.stop();
+      lenis.start();
+
+      window.scrollTo({ top, behavior: "smooth" });
+      // 딥링크·뒤로가기를 위해 주소의 해시는 유지한다
+      window.history.pushState(null, "", `#${id}`);
+    };
+
+    document.addEventListener("click", onAnchorClick);
+    return () => document.removeEventListener("click", onAnchorClick);
   }, []);
 
   // 뒤로/앞으로 가기 여부 — 이 경우엔 브라우저/Next의 스크롤 복원을 존중한다
