@@ -125,11 +125,21 @@ export const COMPANY = {
   retailBrand: "마틴조",
   ceo: "조중규",
   bizNo: "586-87-01315",
-  address: "경기도 고양시 일산동구 동국로 194 (식사동)",
+  mailOrderNo: "제2021-고양일산동-2812호",
+  bizInfoUrl: "https://www.ftc.go.kr/bizCommPop.do?wrkr_no=5868701315",
+  address: "경기도 고양시 일산동구 동국로 194, 지층 (식사동)",
   tel: "031-963-3375",
   fax: "031-964-3375",
-  email: "daleum@daleum.kr",
+  email: "hunyeon88@daleum.kr",
   csHours: "평일 10:00 – 17:00 (점심 12:00 – 13:00)",
+  /** 개인정보 보호책임자 (개인정보 보호법 제31조) */
+  privacyOfficer: {
+    name: "이지안",
+    role: "개인정보 보호책임자",
+    dept: "고객지원팀",
+    phone: "010-9983-0666",
+    email: "hunyeon88@daleum.kr",
+  },
   slogan: "곤약 그 이상의 한계를 발효로 완성하다.",
   certifications: ["HACCP", "FSSC 22000", "VEGAN", "HALAL", "특허 2건", "연구개발전담부서"],
 } as const;
