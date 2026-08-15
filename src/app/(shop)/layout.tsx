@@ -17,7 +17,9 @@ export default async function ShopLayout({ children }: { children: ReactNode }) 
       .from("categories")
       .select("id, slug, name")
       .eq("is_active", true)
-      .order("sort_order", { ascending: true }),
+      // sort_order 동점 시 순서가 요청마다 흔들리지 않도록 2차 키를 고정한다
+      .order("sort_order", { ascending: true })
+      .order("slug", { ascending: true }),
   ]);
 
   const authUser = userResult.data.user;

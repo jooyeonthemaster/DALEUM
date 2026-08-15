@@ -23,7 +23,14 @@ function hrefOf(slug: string | null, sort?: string): string {
   return qs ? `/products?${qs}` : "/products";
 }
 
-/** 카테고리 필터 탭 — 헤어라인 언더라인 + 개수 표시 (서버 컴포넌트) */
+/**
+ * 카테고리 필터 탭 — 헤어라인 언더라인 + 개수 표시 (서버 컴포넌트).
+ *
+ * 좁은 화면에서는 가로 스크롤인데 스크롤바를 양쪽 엔진에서 숨기고 있어,
+ * 뒤에 탭이 더 있다는 사실 자체가 보이지 않았다. 우측에 배경색으로 사라지는
+ * 페이드를 덮어 잘린 글자가 흐려지게 만들어 스크롤 여지를 드러낸다.
+ * (페이드는 pointer-events-none — 마지막 탭의 클릭을 가리면 안 된다)
+ */
 export default function CategoryTabs({
   items,
   activeSlug,
@@ -31,7 +38,11 @@ export default function CategoryTabs({
   className = "",
 }: CategoryTabsProps) {
   return (
-    <nav aria-label="카테고리" className={className}>
+    <nav aria-label="카테고리" className={`relative ${className}`}>
+      <span
+        aria-hidden
+        className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10 bg-[linear-gradient(to_right,transparent,var(--color-cream-50))] sm:hidden"
+      />
       <ul className="flex gap-x-7 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
         {items.map((item) => {
           const active = item.slug === activeSlug;

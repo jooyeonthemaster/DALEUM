@@ -151,7 +151,7 @@ export default function CategoriesClient() {
       return;
     }
     if (!slug || !SLUG_RE.test(slug)) {
-      setEditorError("URL 슬러그는 영문 소문자·숫자·한글·하이픈만 사용할 수 있습니다.");
+      setEditorError("URL 슬러그는 영문 소문자·숫자·하이픈만 사용할 수 있습니다 (한글 불가).");
       return;
     }
     setSaving(true);
@@ -362,12 +362,17 @@ export default function CategoriesClient() {
                 placeholder="예: 곤약면"
               />
             </FieldRow>
-            <FieldRow label="URL 슬러그" required htmlFor="c-slug">
+            <FieldRow
+              label="URL 슬러그"
+              required
+              htmlFor="c-slug"
+              help="영문 소문자·숫자·하이픈만 씁니다(한글 불가). 기존 카테고리의 슬러그를 바꾸면 주소가 함께 바뀌고, 옛 주소로 들어온 방문자는 리다이렉트 없이 전체 목록으로 떨어집니다."
+            >
               <Input
                 id="c-slug"
                 value={editor.slug}
                 onChange={(e) => setEditor({ ...editor, slug: e.target.value, slugTouched: true })}
-                placeholder="konjac-noodle"
+                placeholder="예: konjac-rice, grain-rice"
               />
             </FieldRow>
             <FieldRow label="설명" htmlFor="c-desc">
