@@ -36,6 +36,7 @@ export const ADMIN_MENU: AdminMenuGroup[] = [
     items: [
       { href: "/admin/customers", label: "고객 관리" },
       { href: "/admin/reviews", label: "리뷰 관리" },
+      { href: "/admin/bulk-inquiries", label: "업소용·OEM 문의" },
     ],
   },
   {

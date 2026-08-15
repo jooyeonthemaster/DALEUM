@@ -46,6 +46,7 @@ function useMounted() {
 const NAV_LEFT = { href: "/products", label: "전체상품" };
 const NAV_RIGHT = [
   { href: "/about", label: "브랜드스토리" },
+  { href: "/b2b", label: "업소용·OEM" },
   { href: "/support", label: "고객센터" },
 ];
 

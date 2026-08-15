@@ -148,6 +148,28 @@ const FAQS: AccordionItem[] = [
     ),
   },
   {
+    id: "faq-b2b",
+    overline: "업소용·OEM",
+    title: "대용량이나 OEM 생산도 가능한가요?",
+    content: (
+      <div className="space-y-3">
+        <p>
+          네. 다름은 발효곤약 원료를 직접 만드는 제조사입니다. 4kg 벌크
+          곤약쌀·곤약면과 발효곤약 페이스트를 업소용으로 공급하고 있으며,
+          OEM·ODM 생산과 원료 납품도 진행합니다.
+        </p>
+        <p>
+          규격과 물량에 따라 단가가 달라져 낱개 판매 대신 견적으로 안내드립니다.{" "}
+          <Link href="/b2b" className="text-forest-700 underline underline-offset-4">
+            업소용·OEM 문의
+          </Link>
+          에서 취급 품목을 확인하고 문의를 남겨주시면 영업일 기준 1~2일 안에
+          회신드립니다.
+        </p>
+      </div>
+    ),
+  },
+  {
     id: "faq-vip",
     overline: "VIP",
     title: "VIP 라운지는 어떻게 이용하나요?",
