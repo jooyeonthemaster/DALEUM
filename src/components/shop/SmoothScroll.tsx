@@ -35,6 +35,31 @@ function LenisController() {
     });
     lenisRef.current = lenis;
 
+    /**
+     * lenis 는 스크롤 한계(limit = 문서높이 - 뷰포트높이)를 캐시해 두고, 콘텐츠가
+     * 바뀌면 ResizeObserver 로 다시 잰다. 그런데 lenis 가 관찰하는 기본 대상은
+     * documentElement 이고, 루트 레이아웃이 <html class="h-full"> 이라 이 요소의
+     * 박스 높이는 언제나 뷰포트 높이(예: 900px)로 고정돼 있다.
+     * ResizeObserver 는 scrollHeight 가 아니라 "박스 크기"를 보므로, 콘텐츠가
+     * 아무리 늘어나도 이 관찰자는 영원히 발화하지 않는다.
+     * 즉 lenis 의 자동 재측정이 통째로 죽은 상태였다.
+     *
+     * 실측 (상품목록에서 /products/jjajang 클릭, 1440x900):
+     *   t=208ms  문서 1,671px  ← 라우트 전환 직후. 새 페이지는 아직 도착 전
+     *   t=813ms  문서 4,865px  ← 실제 상세 콘텐츠 도착
+     * 한계가 208ms 시점 값(1,671-900 = 771)으로 굳어, 휠이 771px 에서 멈췄다.
+     * (검증: window 에 resize 이벤트를 하나 쏴서 재측정시키면 즉시 3,965 까지 내려감)
+     *
+     * body 는 height:auto 라 콘텐츠 높이만큼 자란다 — 이쪽을 관찰하면 콘텐츠가
+     * 늘어나는 즉시 발화한다. 측정값 자체(documentElement.scrollHeight)는 정확하므로
+     * 무엇을 재는지는 그대로 두고, "언제 다시 재는지"만 바로잡는다.
+     * 라우트 전환뿐 아니라 이미지 지연 로드·아코디언 펼침·리뷰 더보기처럼
+     * 페이지가 나중에 길어지는 모든 경우가 같은 버그였고, 함께 해결된다.
+     * (lenis 내장 관찰자는 250ms 디바운스라 살아 있어도 늦다 — 이건 즉시 반영)
+     */
+    const contentObserver = new ResizeObserver(() => lenis.resize());
+    contentObserver.observe(document.body);
+
     let rafId = requestAnimationFrame(function raf(time: number) {
       lenis.raf(time);
       rafId = requestAnimationFrame(raf);
@@ -42,6 +67,7 @@ function LenisController() {
 
     return () => {
       cancelAnimationFrame(rafId);
+      contentObserver.disconnect();
       lenis.destroy();
       lenisRef.current = null;
       html.style.scrollBehavior = prevScrollBehavior;

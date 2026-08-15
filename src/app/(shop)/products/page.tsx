@@ -37,7 +37,9 @@ const getCategories = cache(async (): Promise<CategoryRow[]> => {
     .from("categories")
     .select("id, slug, name, description")
     .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+    // sort_order 동점 시 탭 순서가 요청마다 흔들리지 않도록 2차 키를 고정한다
+    .order("sort_order", { ascending: true })
+    .order("slug", { ascending: true });
   return (data ?? []) as CategoryRow[];
 });
 

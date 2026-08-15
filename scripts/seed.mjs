@@ -60,11 +60,18 @@ const STORY_FERMENT =
 const ORIGIN = '국내산 (경기 고양)';
 
 // ---------- 카테고리 ----------
+// 분류축은 "포장 안에 물리적으로 무엇이 들어 있는가" 하나다 (0005 마이그레이션 참조).
+// description 에 소속 상품을 열거하지 않는다 — 상품이 들고 나면 아무 경고 없이 거짓이 된다.
+// is_active 는 여기서 지정하지 않는다: bulk 는 0004 가 의도적으로 숨겼고, 시딩이
+// 그것을 덮어쓰면 감춘 탭이 되살아난다.
 const CATEGORIES = [
-  { slug: 'ramen', name: '곤약 라면', sort_order: 1, description: '특허 발효공법으로 만든 저칼로리 발효곤약면 라면' },
-  { slug: 'noodles', name: '곤약면', sort_order: 2, description: '세면·국시·분모자 — 굵기별 발효곤약면' },
-  { slug: 'rice', name: '곤약쌀·바로밥', sort_order: 3, description: '발효쌀곤약과 발효곤약 바로밥' },
-  { slug: 'bulk', name: '대용량·업소용', sort_order: 4, description: '4kg 벌크·페이스트 — 업소/B2B 전용 (견적 문의)' },
+  { slug: 'ramen', name: '소스포함 곤약면', sort_order: 1, description: '면과 소스·스프가 한 봉지에 함께 들어 있음', image_url: '/editorial/hero-ramen.jpg' },
+  { slug: 'noodles', name: '곤약면 단품', sort_order: 2, description: '소스·스프 없이 면만 들어 있음', image_url: '/editorial/somyeon-bowl.jpg' },
+  { slug: 'instant-noodles', name: '용기형 곤약면', sort_order: 3, description: '국물·소스까지 용기에 담긴 한 그릇 — 데워도, 차게도', image_url: '/editorial/buckwheat-noodle.jpg' },
+  { slug: 'rice', name: '곤약밥', sort_order: 4, description: '데우면 바로 먹는 완조리 곤약밥', image_url: '/editorial/yeoju-rice.jpg' },
+  { slug: 'bulk', name: '대용량·업소용', sort_order: 5, description: '업소·B2B 전용 — 4kg 벌크와 발효곤약 페이스트 (견적 문의)' },
+  { slug: 'konjac-rice', name: '곤약쌀', sort_order: 6, description: '조미 없는 쌀알 모양 곤약 원물', image_url: '/editorial/rice-table.jpg' },
+  { slug: 'grain-rice', name: '저당 곡물밥', sort_order: 7, description: '곤약 없이 고대곡물·현미로 지은 즉석밥', image_url: 'https://ezmmutjazqsikopltmnj.supabase.co/storage/v1/object/public/products/daleum/paro-brown-rice/gallery/2.webp' },
 ];
 
 // ---------- B2C 상품 13종 ----------
@@ -219,7 +226,7 @@ const B2C = [
     images: [crawlImg('2-c.jpg'), crawlImg('c-2.jpg'), pdfAsset('p13_06'), pdfAsset('p12_12')],
   },
   {
-    slug: 'ssalgonyak', category: 'rice', price: 54000, sort_order: 1,
+    slug: 'ssalgonyak', category: 'konjac-rice', price: 54000, sort_order: 1,
     name: '마틴조 발효쌀곤약',
     subtitle: '쌀알 모양 발효곤약 — 한 봉지 25kcal, 백미에 가까운 식감',
     description:
@@ -236,7 +243,7 @@ const B2C = [
     images: [crawlImg('2-d.jpg'), crawlImg('d-2.jpg'), pdfAsset('p13_07'), pdfAsset('p12_02')],
   },
   {
-    slug: 'rice-12kcal', category: 'rice', price: 54000, sort_order: 2,
+    slug: 'rice-12kcal', category: 'konjac-rice', price: 54000, sort_order: 2,
     name: '마틴조 12kcal 발효곤약쌀',
     subtitle: '100g당 12kcal — 초저칼로리 발효곤약쌀',
     description:
@@ -409,9 +416,11 @@ async function main() {
   log('Supabase:', SUPABASE_URL);
 
   // 1) 카테고리 upsert
+  // is_active 를 강제하지 않는다 — 예전엔 `{ ...c, is_active: true }` 로 덮어써서
+  // 0004 가 숨긴 bulk 탭이 재시딩 때마다 되살아났다. 신규 행은 컬럼 기본값(true)이 붙는다.
   const { data: cats, error: catErr } = await db
     .from('categories')
-    .upsert(CATEGORIES.map((c) => ({ ...c, is_active: true })), { onConflict: 'slug' })
+    .upsert(CATEGORIES, { onConflict: 'slug' })
     .select('id, slug');
   if (catErr) fail('categories upsert', catErr);
   const catId = Object.fromEntries(cats.map((c) => [c.slug, c.id]));

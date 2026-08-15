@@ -58,12 +58,16 @@ export default async function HomePage() {
         .eq("placement", "hero")
         .eq("is_active", true)
         .order("sort_order", { ascending: true }),
+      // 상한은 쇼케이스가 실제로 배치할 수 있는 수(8)에 맞춘다. 여기와
+      // CategoryShowcase의 slice는 반드시 같이 움직여야 한다 — 한쪽만 올리면
+      // 다른 쪽이 그대로 잘라서 카테고리가 소리 없이 사라진다.
       supabase
         .from("categories")
         .select("*")
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
-        .limit(5),
+        .order("slug", { ascending: true })
+        .limit(8),
       supabase
         .from("products")
         .select(PRODUCT_SELECT)

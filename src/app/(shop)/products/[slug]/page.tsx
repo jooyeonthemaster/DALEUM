@@ -22,6 +22,7 @@ import Gallery from "@/components/catalog/Gallery";
 import DescriptionBlock, {
   hasDescriptionImages,
 } from "@/components/catalog/DescriptionBlock";
+import Expandable from "@/components/catalog/Expandable";
 import AddToCart, {
   type PurchaseOption,
   type SpecRow,
@@ -319,6 +320,7 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   ];
 
   const detailSpecs: Record<string, string | number> = {
+    ...(product.brand ? { 브랜드: product.brand } : {}),
     "보관 방법": STORAGE_TYPE_LABELS[product.storage_type],
     ...(product.origin ? { 원산지: product.origin } : {}),
     ...(product.weight ? { 중량: product.weight } : {}),
@@ -345,14 +347,26 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
           />
 
           <div className="lg:sticky lg:top-28 lg:self-start">
-            {product.categories && (
+            {(product.brand || product.categories) && (
               <Reveal variant="fade">
-                <Link
-                  href={`/products?category=${product.categories.slug}`}
-                  className="label-caps text-forest-600 transition-colors hover:text-forest-800"
-                >
-                  {product.categories.name}
-                </Link>
+                <p className="label-caps flex flex-wrap items-center gap-x-2 gap-y-1 text-forest-600">
+                  {/* 다름은 자체 상품과 납품처 상품(수다락·곤약닷컴)을 함께 판다.
+                      패키지 브랜드가 상품명과 다를 수 있어 카테고리 앞에 브랜드를 밝힌다. */}
+                  {product.brand && <span className="text-ink-500">{product.brand}</span>}
+                  {product.brand && product.categories && (
+                    <span aria-hidden className="text-ink-300">
+                      ·
+                    </span>
+                  )}
+                  {product.categories && (
+                    <Link
+                      href={`/products?category=${product.categories.slug}`}
+                      className="transition-colors hover:text-forest-800"
+                    >
+                      {product.categories.name}
+                    </Link>
+                  )}
+                </p>
               </Reveal>
             )}
             <RevealText
@@ -377,12 +391,12 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                   ))}
                 </div>
               )}
+              {/* 설명이 긴 상품은 구매 박스가 통째로 밀려 장바구니 버튼이 화면 밖으로
+                  나간다. 앞부분만 보여주고 나머지는 "자세히 보기"로 넘긴다. */}
               {product.description && (
-                <DescriptionBlock
-                  text={product.description}
-                  className="mt-5"
-                  only="text"
-                />
+                <Expandable lines={7} className="mt-5">
+                  <DescriptionBlock text={product.description} only="text" />
+                </Expandable>
               )}
             </Reveal>
 
@@ -485,7 +499,8 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                 />
               </Reveal>
               <Reveal variant="fade" delay={0.12}>
-                <SpecTable data={detailSpecs} />
+                {/* 원재료·원산지·인증은 길이가 제각각이라 두 줄만 두고 접는다 */}
+                <SpecTable data={detailSpecs} clampLines={2} />
               </Reveal>
             </div>
           </section>

@@ -11,6 +11,7 @@ import {
 import { ChevronDown } from "lucide-react";
 import PriceTag from "@/components/shop/PriceTag";
 import QtyStepper from "@/components/shop/QtyStepper";
+import Expandable from "./Expandable";
 import { useCart } from "@/store/cart";
 import { track } from "@/lib/analytics";
 import { krw } from "@/lib/format";
@@ -167,8 +168,11 @@ export default function AddToCart({
         <dl className="hairline-t mt-6 divide-y divide-ink-100">
           {specs.map((row) => (
             <div key={row.label} className="flex justify-between gap-6 py-2.5">
-              <dt className="text-[13px] text-ink-500">{row.label}</dt>
-              <dd className="text-right text-[13px] text-ink-800">{row.value}</dd>
+              <dt className="shrink-0 text-[13px] text-ink-500">{row.label}</dt>
+              <dd className="min-w-0 text-right text-[13px] text-ink-800">
+                {/* 원산지처럼 긴 값이 구매 박스를 밀어내지 않게 두 줄만 둔다 */}
+                <Expandable lines={2}>{row.value}</Expandable>
+              </dd>
             </div>
           ))}
         </dl>

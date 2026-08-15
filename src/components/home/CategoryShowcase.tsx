@@ -5,17 +5,29 @@ import Reveal from "@/components/shop/Reveal";
 import SectionTitle from "@/components/shop/SectionTitle";
 
 export interface CategoryShowcaseProps {
-  /** 활성 카테고리 (sort_order 정렬, 최대 5개 노출) */
+  /** 활성 카테고리 (sort_order 정렬, 최대 8개 노출) */
   categories: Category[];
 }
 
-/** 카테고리 이미지가 없을 때 순서대로 쓰는 에디토리얼 대체 사진 */
+/** 쇼케이스가 배치할 수 있는 최대 타일 수 — 홈 쿼리의 limit과 반드시 같이 움직인다 */
+const MAX_TILES = 8;
+
+/**
+ * 카테고리 이미지가 없을 때 순서대로 쓰는 에디토리얼 대체 사진.
+ * 면·밥을 섞어 둔다 — 면 사진만 있으면 밥 카테고리에 국수 사진이 걸린다.
+ *
+ * 파일명을 믿지 말 것: public/editorial/rice-bowl-wood.jpg 는 이름과 달리
+ * 국수 사진이고, rice-black-bowl.jpg 는 당도계 QC 컷이라 둘 다 제외했다.
+ */
 const FALLBACK_IMAGES = [
   "/editorial/guksi-wood.jpg",
   "/editorial/somyeon-bowl.jpg",
-  "/editorial/tteok-bowl.jpg",
+  "/editorial/rice-table.jpg",
   "/editorial/miyeok-noodle-bowl.jpg",
+  "/editorial/yeoju-rice.jpg",
   "/editorial/buckwheat-noodle.jpg",
+  "/editorial/tteok-bowl.jpg",
+  "/editorial/bunmoja-white.jpg",
 ];
 
 interface TileProps {
@@ -74,10 +86,25 @@ function CategoryTile({ category, index, image, sizes, className = "" }: TilePro
 export default function CategoryShowcase({ categories }: CategoryShowcaseProps) {
   if (categories.length === 0) return null;
 
-  const list = categories.slice(0, 5);
+  const list = categories.slice(0, MAX_TILES);
   const [first, ...rest] = list;
   const side = rest.slice(0, 2);
   const bottom = rest.slice(2);
+
+  // 하단 와이드 행 — 12칼럼을 남김 없이 나눠 반폭 잔행이 생기지 않게 한다.
+  // 1개는 전폭, 3·6개는 3열, 그 외는 2열.
+  const bottomSpan =
+    bottom.length === 1
+      ? "md:col-span-12"
+      : bottom.length % 3 === 0
+        ? "md:col-span-4"
+        : "md:col-span-6";
+  const bottomAspect =
+    bottom.length === 1
+      ? "aspect-[16/9] md:aspect-[21/8]"
+      : bottom.length % 3 === 0
+        ? "aspect-[16/9] md:aspect-[4/3]"
+        : "aspect-[16/9] md:aspect-[16/8]";
 
   const imageOf = (cat: Category, i: number) =>
     cat.image_url ?? FALLBACK_IMAGES[i % FALLBACK_IMAGES.length];
@@ -135,14 +162,18 @@ export default function CategoryShowcase({ categories }: CategoryShowcaseProps) 
             key={cat.id}
             variant={i % 2 === 0 ? "clip-left" : "clip-right"}
             delay={0.1 + i * 0.1}
-            className={bottom.length === 1 ? "md:col-span-12" : "md:col-span-6"}
+            className={bottomSpan}
           >
             <CategoryTile
               category={cat}
               index={i + 3}
               image={imageOf(cat, i + 3)}
-              sizes="(min-width: 768px) 50vw, 100vw"
-              className={bottom.length === 1 ? "aspect-[16/9] md:aspect-[21/8]" : "aspect-[16/9] md:aspect-[16/8]"}
+              sizes={
+                bottom.length % 3 === 0
+                  ? "(min-width: 768px) 33vw, 100vw"
+                  : "(min-width: 768px) 50vw, 100vw"
+              }
+              className={bottomAspect}
             />
           </Reveal>
         ))}

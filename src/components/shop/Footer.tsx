@@ -10,6 +10,7 @@ const LEGAL_NAV = [
 const FOOTER_NAV = [
   { href: "/products", label: "전체상품" },
   { href: "/about", label: "브랜드스토리" },
+  { href: "/b2b", label: "업소용·OEM 문의" },
   { href: "/support", label: "고객센터" },
   { href: "/vip", label: "VIP 라운지" },
 ];
