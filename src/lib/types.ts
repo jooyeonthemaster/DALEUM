@@ -67,6 +67,10 @@ export interface Product {
   name: string;
   subtitle: string | null;
   category_id: string | null;
+  /** 패키지 인쇄 소비자 브랜드 (마틴조 / 바비지요 / 밥애쏙 / 칼로리시즌 …) — 0003 마이그레이션 */
+  brand?: string | null;
+  /** 공급 라인: 자체 / 수다락 / 곤약닷컴 — 관리자 식별용, 고객 화면에는 노출하지 않는다 */
+  supplier?: string | null;
   description: string | null;
   story: string | null;
   price: number;
@@ -382,4 +386,31 @@ export interface ShippingSettings {
   base_fee: number;
   free_threshold: number;
   island_extra: number;
+}
+
+/* ---------- 업소용·OEM 견적 문의 (0004) ---------- */
+
+export type BulkInquiryStatus = "new" | "contacted" | "quoted" | "closed" | "spam";
+export type BulkInquiryPurpose = "oem" | "raw_material" | "wholesale" | "sample" | "etc";
+
+export interface BulkInquiry {
+  id: string;
+  company: string;
+  contact_name: string;
+  phone: string;
+  email: string;
+  biz_no: string | null;
+  purpose: BulkInquiryPurpose | null;
+  /** 관심 품목 — products.slug */
+  product_slugs: string[];
+  volume: string | null;
+  message: string;
+  status: BulkInquiryStatus;
+  admin_memo: string | null;
+  handled_by: string | null;
+  handled_at: string | null;
+  source_ip: string | null;
+  user_agent: string | null;
+  created_at: string;
+  updated_at: string;
 }

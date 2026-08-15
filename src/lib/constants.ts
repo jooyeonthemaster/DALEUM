@@ -1,4 +1,11 @@
-import type { OrderStatus, PaymentStatus, ShipmentStatus, StorageType } from "./types";
+import type {
+  BulkInquiryPurpose,
+  BulkInquiryStatus,
+  OrderStatus,
+  PaymentStatus,
+  ShipmentStatus,
+  StorageType,
+} from "./types";
 
 export const ORDER_STATUS_LABELS: Record<OrderStatus, string> = {
   pending: "결제 대기",
@@ -151,3 +158,38 @@ export const TOSS_CLIENT_KEY = process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? "";
 /* ---------- VIP 세션 쿠키 ---------- */
 
 export const VIP_CODE_COOKIE = "daleum_vip_code";
+
+/* ---------- 업소용·OEM 견적 문의 ---------- */
+
+export const BULK_INQUIRY_STATUS_LABELS: Record<BulkInquiryStatus, string> = {
+  new: "신규 접수",
+  contacted: "연락 완료",
+  quoted: "견적 발송",
+  closed: "종결",
+  spam: "스팸",
+};
+
+export const BULK_INQUIRY_STATUS_TONES: Record<BulkInquiryStatus, string> = {
+  new: "bg-forest-600 text-cream-50",
+  contacted: "bg-forest-100 text-forest-800",
+  quoted: "bg-forest-900 text-cream-50",
+  closed: "bg-ink-100 text-ink-500",
+  spam: "bg-ink-200 text-ink-500",
+};
+
+export const BULK_INQUIRY_PURPOSE_LABELS: Record<BulkInquiryPurpose, string> = {
+  oem: "OEM·ODM 생산",
+  raw_material: "원료 납품",
+  wholesale: "도매·유통",
+  sample: "샘플 요청",
+  etc: "기타",
+};
+
+/** 문의 폼 셀렉트 순서 */
+export const BULK_INQUIRY_PURPOSES: BulkInquiryPurpose[] = [
+  "oem",
+  "raw_material",
+  "wholesale",
+  "sample",
+  "etc",
+];
