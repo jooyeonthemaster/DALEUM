@@ -1,7 +1,5 @@
 import type { Metadata } from "next";
-import { cache } from "react";
-import { createClient } from "@/lib/supabase/server";
-import type { ProductWithImages } from "@/lib/types";
+import { getCachedCategories, getCachedProductCards, getCachedProductCounts } from "@/lib/cache";
 import ProductCard from "@/components/shop/ProductCard";
 import EmptyState from "@/components/shop/EmptyState";
 import Reveal from "@/components/shop/Reveal";
@@ -10,20 +8,9 @@ import CategoryTabs, { type CategoryTabItem } from "@/components/catalog/Categor
 import SortSelect from "@/components/catalog/SortSelect";
 import { parseSortKey, type SortKey } from "@/components/catalog/sort";
 import PaginationNav from "@/components/catalog/PaginationNav";
-import {
-  PRODUCT_CARD_SELECT,
-  VISIBLE_STATUSES,
-  toPricedProducts,
-} from "@/components/catalog/queries";
+import { toPricedProducts } from "@/components/catalog/queries";
 
 const PAGE_SIZE = 24;
-
-interface CategoryRow {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-}
 
 type SearchParams = Promise<{ [key: string]: string | string[] | undefined }>;
 
@@ -31,25 +18,13 @@ function first(v: string | string[] | undefined): string | undefined {
   return Array.isArray(v) ? v[0] : v;
 }
 
-const getCategories = cache(async (): Promise<CategoryRow[]> => {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("categories")
-    .select("id, slug, name, description")
-    .eq("is_active", true)
-    // sort_order 동점 시 탭 순서가 요청마다 흔들리지 않도록 2차 키를 고정한다
-    .order("sort_order", { ascending: true })
-    .order("slug", { ascending: true });
-  return (data ?? []) as CategoryRow[];
-});
-
 export async function generateMetadata({
   searchParams,
 }: {
   searchParams: SearchParams;
 }): Promise<Metadata> {
   const sp = await searchParams;
-  const categories = await getCategories();
+  const categories = await getCachedCategories();
   const active = categories.find((c) => c.slug === first(sp.category));
   return {
     title: active ? active.name : "전체 상품",
@@ -66,25 +41,20 @@ export default async function ProductsPage({
 }) {
   const sp = await searchParams;
   const sort: SortKey = parseSortKey(first(sp.sort));
-  const supabase = await createClient();
 
-  const categories = await getCategories();
+  // 카테고리 목록과 개수는 서로 의존하지 않으므로 함께 띄운다.
+  // 둘 다 캐시 계층을 거치므로 통상적으로는 DB 왕복이 발생하지 않는다.
+  const [categories, counts] = await Promise.all([
+    getCachedCategories(),
+    getCachedProductCounts(),
+  ]);
+
   const activeCategory =
     categories.find((c) => c.slug === first(sp.category)) ?? null;
 
-  // ---------- 카테고리별 개수 (탭 표시 + 전체 카운트) ----------
-  const { data: countRows } = await supabase
-    .from("products")
-    .select("category_id")
-    .in("status", [...VISIBLE_STATUSES]);
-  const counts = new Map<string, number>();
-  for (const row of countRows ?? []) {
-    if (row.category_id) {
-      counts.set(row.category_id, (counts.get(row.category_id) ?? 0) + 1);
-    }
-  }
-  const totalAll = (countRows ?? []).length;
-  const total = activeCategory ? counts.get(activeCategory.id) ?? 0 : totalAll;
+  const total = activeCategory
+    ? counts.byCategory[activeCategory.id] ?? 0
+    : counts.total;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const rawPage = Number.parseInt(first(sp.page) ?? "1", 10);
@@ -93,38 +63,23 @@ export default async function ProductsPage({
     totalPages
   );
 
-  // ---------- 상품 조회 (RLS: active + sold_out만 보임) ----------
-  let query = supabase
-    .from("products")
-    .select(PRODUCT_CARD_SELECT)
-    .in("status", [...VISIBLE_STATUSES]);
-  if (activeCategory) query = query.eq("category_id", activeCategory.id);
-
-  switch (sort) {
-    case "price_asc":
-      query = query.order("price", { ascending: true }).order("created_at", { ascending: false });
-      break;
-    case "price_desc":
-      query = query.order("price", { ascending: false }).order("created_at", { ascending: false });
-      break;
-    case "popular":
-      query = query.order("view_count", { ascending: false }).order("created_at", { ascending: false });
-      break;
-    default:
-      query = query.order("created_at", { ascending: false });
-  }
-
-  const { data } = await query.range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-  const products = await toPricedProducts(
-    (data ?? []) as unknown as ProductWithImages[]
-  );
+  // ---------- 상품 조회 ----------
+  // 캐시 계층은 로그아웃 방문자 시야(anon)로만 읽으므로 노출 상태 필터가 항상 동일하다.
+  const rows = await getCachedProductCards({
+    categoryId: activeCategory?.id ?? null,
+    sort,
+    page,
+    pageSize: PAGE_SIZE,
+  });
+  // VIP 가격만 요청마다 새로 해석한다 — 사용자별로 다르므로 캐시 대상이 아니다.
+  const products = await toPricedProducts(rows);
 
   const tabItems: CategoryTabItem[] = [
-    { slug: null, name: "전체", count: totalAll },
+    { slug: null, name: "전체", count: counts.total },
     ...categories.map((c) => ({
       slug: c.slug,
       name: c.name,
-      count: counts.get(c.id) ?? 0,
+      count: counts.byCategory[c.id] ?? 0,
     })),
   ];
 

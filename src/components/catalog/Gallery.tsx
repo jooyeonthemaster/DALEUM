@@ -1,7 +1,7 @@
 "use client";
 
 import Image from "next/image";
-import { useState, type SyntheticEvent } from "react";
+import { useRef, useState, type SyntheticEvent } from "react";
 import Reveal from "@/components/shop/Reveal";
 import Parallax from "@/components/shop/Parallax";
 
@@ -30,29 +30,96 @@ const EXTREME_ASPECT_RATIO = 0.5;
  * 상세 통이미지(예: 1001×9243)가 실수로 갤러리에 섞여 들어오면 4:5 object-cover로는
  * 중앙 한 조각만 잘려 의미불명 화면이 되므로, 그런 이미지만 object-contain으로 폴백해
  * 전체가 보이게 한다. 원본 치수는 서버에서 알 수 없으므로 로드 시점에 실측한다.
+ *
+ * 지연 로드: 겹쳐 놓은 구조에서는 loading="lazy" 가 무력하다 — 전부 뷰포트 안이라
+ * 브라우저가 첫 진입에 보이지도 않는 이미지까지 전부 받아 버린다(상품당 최대 7장).
+ * 그래서 "한 번이라도 활성화된 적 있는" 인덱스만 실제로 마운트한다.
  */
 export default function Gallery({ images, name, className = "" }: GalleryProps) {
   const [active, setActive] = useState(0);
+  /**
+   * 실제로 <Image>를 렌더할 인덱스.
+   * 첫 화면에는 대표 이미지(0번) 하나만 내려간다. 썸네일을 눌러 활성화된 시점에 추가하며,
+   * 한 번 들어온 인덱스는 절대 빼지 않는다 — 되돌아왔을 때 이미 로드돼 있어야
+   * 깜빡임 없이 페이드 전환이 그대로 동작한다.
+   */
+  const [mounted, setMounted] = useState<ReadonlySet<number>>(
+    () => new Set([0])
+  );
+  /**
+   * 로드가 끝난 인덱스.
+   * 표시 전환과 object-fit 판정이 모두 "픽셀이 준비됐는가"에 달려 있어서 따로 추적한다.
+   */
+  const [loaded, setLoaded] = useState<ReadonlySet<number>>(() => new Set());
+  /**
+   * 실제로 화면에 떠 있는 인덱스. 선택(active)과 분리한다.
+   *
+   * 이걸 나누지 않으면, 아직 받지 않은 이미지를 고른 순간 이전 이미지가 곧바로
+   * 페이드 아웃을 시작해 버려 새 이미지가 도착할 때까지 빈 크림색 박스가 남는다
+   * (실측: 클릭 200ms 뒤 최대 opacity 0.14). displayed 는 목표 이미지가 로드된
+   * 뒤에만 옮겨가므로, 이전 이미지가 끝까지 자리를 지키다 곧바로 크로스페이드된다.
+   */
+  const [displayed, setDisplayed] = useState(0);
   // 실측 결과 종횡비가 극단적이었던 이미지의 인덱스 (초기값은 비어 있어 SSR 결과가 기존과 동일)
   const [tallIndexes, setTallIndexes] = useState<ReadonlySet<number>>(
     () => new Set()
   );
 
-  /** 로드된 이미지의 자연 크기를 재서 극단적으로 세로가 긴 것만 표시해 둔다 */
-  const markIfTooTall = (
-    index: number,
-    event: SyntheticEvent<HTMLImageElement>
-  ) => {
-    const { naturalWidth, naturalHeight } = event.currentTarget;
-    // SVG 등 자연 크기를 못 얻는 경우엔 기존 동작(cover)을 유지한다
-    if (!naturalWidth || !naturalHeight) return;
-    if (naturalWidth / naturalHeight >= EXTREME_ASPECT_RATIO) return;
-    setTallIndexes((prev) => {
+  /** onLoad 콜백이 "지금 선택된 인덱스"를 봐야 하는데 클로저는 낡은 값을 잡는다 */
+  const activeRef = useRef(0);
+  activeRef.current = active;
+
+  /**
+   * 썸네일 선택.
+   *
+   * active 는 즉시 바꿔 썸네일 강조가 클릭에 곧바로 반응하게 한다.
+   * 다만 **실제로 화면에 띄우는 것은 로드가 끝난 뒤**다(아래 opacity 판정).
+   * 지연 마운트를 도입하면서 활성화를 rAF 2프레임 뒤로 고정했더니,
+   * 아직 받아오지 못한 이미지로 전환되며 "사진 → 빈 크림색 박스 → 사진" 이 됐다.
+   * 로드 완료를 기다리면 이전 이미지가 그대로 남아 있다가 곧바로 크로스페이드된다.
+   */
+  const selectImage = (index: number) => {
+    setActive(index);
+    setMounted((prev) => {
       if (prev.has(index)) return prev;
       const next = new Set(prev);
       next.add(index);
       return next;
     });
+    // 이미 받아 둔 이미지면 곧바로 교체한다. 아직이면 handleLoad 가 도착 시점에 옮긴다.
+    if (loaded.has(index)) setDisplayed(index);
+  };
+
+  /**
+   * 로드 완료 처리 — 표시 자격 부여와 종횡비 실측을 같은 이벤트에서 끝낸다.
+   *
+   * 두 setState 가 같은 배치에서 반영되므로, 이미지가 보이기 시작하는 렌더에는
+   * 이미 올바른 object-fit 이 적용돼 있다. 초세로 이미지가 cover 로 한 프레임
+   * 잘려 보였다가 contain 으로 튀는 일이 생기지 않는다.
+   */
+  const handleLoad = (
+    index: number,
+    event: SyntheticEvent<HTMLImageElement>
+  ) => {
+    const { naturalWidth, naturalHeight } = event.currentTarget;
+    // SVG 등 자연 크기를 못 얻는 경우엔 기존 동작(cover)을 유지한다
+    if (naturalWidth && naturalHeight && naturalWidth / naturalHeight < EXTREME_ASPECT_RATIO) {
+      setTallIndexes((prev) => {
+        if (prev.has(index)) return prev;
+        const next = new Set(prev);
+        next.add(index);
+        return next;
+      });
+    }
+    setLoaded((prev) => {
+      if (prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+    // 기다리던 그 이미지가 도착한 경우에만 교체한다 —
+    // 로딩 중 사용자가 다른 썸네일을 눌렀다면 뒤늦게 도착한 이미지가 화면을 가로채면 안 된다.
+    if (activeRef.current === index) setDisplayed(index);
   };
 
   if (images.length === 0) {
@@ -75,24 +142,31 @@ export default function Gallery({ images, name, className = "" }: GalleryProps) 
       <Reveal variant="clip">
         <div className="relative aspect-[4/5] w-full overflow-hidden rounded-sm bg-cream-100">
           <Parallax speed={30} className="absolute inset-0">
-            {images.map((img, i) => (
-              <Image
-                key={`${img.url}-${i}`}
-                src={img.url}
-                alt={img.alt ?? name}
-                fill
-                priority={i === 0}
-                sizes="(min-width: 1024px) 50vw, 100vw"
-                onLoad={(e) => markIfTooTall(i, e)}
-                className={`${
-                  // 초세로 이미지는 패럴랙스 여유 스케일까지 빼고 통째로 보여준다
-                  tallIndexes.has(i) ? "object-contain" : "scale-110 object-cover"
-                } transition-opacity duration-700 ease-silk ${
-                  i === active ? "opacity-100" : "opacity-0"
-                }`}
-                aria-hidden={i !== active}
-              />
-            ))}
+            {/* 아직 활성화된 적 없는 이미지는 아예 마운트하지 않는다 — 겹쳐 놓은 구조라
+                DOM 에 있기만 하면 뷰포트 안이라 브라우저가 즉시 내려받기 때문이다.
+                0번은 LCP 이미지라 언제나 마운트 + priority 로 즉시 로드한다. */}
+            {images.map((img, i) =>
+              mounted.has(i) ? (
+                <Image
+                  key={`${img.url}-${i}`}
+                  src={img.url}
+                  alt={img.alt ?? name}
+                  fill
+                  priority={i === 0}
+                  sizes="(min-width: 1024px) 50vw, 100vw"
+                  onLoad={(e) => handleLoad(i, e)}
+                  className={`${
+                    // 초세로 이미지는 패럴랙스 여유 스케일까지 빼고 통째로 보여준다
+                    tallIndexes.has(i) ? "object-contain" : "scale-110 object-cover"
+                  } transition-opacity duration-700 ease-silk ${
+                    // displayed 는 로드가 끝난 뒤에만 옮겨간다 — 아직 못 받은 이미지로
+                    // 전환하면 빈 컨테이너(bg-cream-100)가 그대로 노출되기 때문이다.
+                    i === displayed ? "opacity-100" : "opacity-0"
+                  }`}
+                  aria-hidden={i !== displayed}
+                />
+              ) : null
+            )}
           </Parallax>
         </div>
       </Reveal>
@@ -112,7 +186,7 @@ export default function Gallery({ images, name, className = "" }: GalleryProps) 
               role="tab"
               aria-selected={i === active}
               aria-label={`${i + 1}번째 이미지 보기`}
-              onClick={() => setActive(i)}
+              onClick={() => selectImage(i)}
               className={`relative aspect-[4/5] w-16 shrink-0 overflow-hidden rounded-sm border transition-colors duration-300 ${
                 i === active
                   ? "border-ink-900"

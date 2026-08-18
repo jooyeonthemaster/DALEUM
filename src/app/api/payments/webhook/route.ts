@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import { getPayment, type TossPayment } from "@/lib/toss";
 import {
@@ -7,6 +8,7 @@ import {
   appendAdminMemo,
   type FinalizableOrder,
 } from "@/lib/orders";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * 토스페이먼츠 웹훅 (PAYMENT_STATUS_CHANGED).
@@ -90,7 +92,10 @@ async function handleDone(
     return;
   }
 
-  await finalizePaidOrder(service, order, payment);
+  const { claimed } = await finalizePaidOrder(service, order, payment);
+  // 재고가 실제로 차감된 경우에만 무효화한다.
+  // claimed=false 는 confirm 이 먼저 확정한 중복 호출이라 재고가 그대로다.
+  if (claimed) revalidateTag(CACHE_TAGS.products, { expire: 0 });
 }
 
 /** CANCELED / PARTIAL_CANCELED: payments·orders 상태 동기화 */
@@ -150,5 +155,7 @@ async function handleCancelled(
   // pending 상태에서 취소된 주문은 재고를 차감한 적이 없으므로 복구 불필요
   if (order.status !== "pending") {
     await restoreOrderStock(service, order);
+    // 재고가 복구된 경우에만 무효화 — 품절 표시가 판매중으로 되돌아갈 수 있다
+    revalidateTag(CACHE_TAGS.products, { expire: 0 });
   }
 }

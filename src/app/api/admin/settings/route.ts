@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 import { DEFAULT_SHIPPING } from "@/lib/shipping";
 import { COMPANY } from "@/lib/constants";
 import type { ShippingSettings } from "@/lib/types";
@@ -109,5 +111,17 @@ export async function PUT(req: NextRequest) {
     console.error("[admin/settings PUT]", error);
     return NextResponse.json({ error: "설정을 저장하지 못했습니다." }, { status: 500 });
   }
+
+  // 캐시 계층에서 settings 태그를 쓰는 것은 getCachedShippingSettings 하나뿐이다.
+  // key === "store" 는 대응하는 캐시 항목이 없으므로 무효화하지 않는다 —
+  // 무해하긴 하지만, 굳이 부르면 관계없는 배송비 캐시만 헛되이 만료된다.
+  //
+  // 두 번째 인자는 Next 16 에서 필수이며, { expire: 0 } 은 즉시 만료다.
+  // "max"(stale-while-revalidate)를 쓰면 배송비를 저장한 직후에도 주문서에
+  // 이전 배송비가 한 번 더 노출되므로 금액이 어긋난다. 즉시 만료여야 한다.
+  if (key === "shipping") {
+    revalidateTag(CACHE_TAGS.settings, { expire: 0 });
+  }
+
   return NextResponse.json({ ok: true, key, value });
 }

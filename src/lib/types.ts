@@ -123,11 +123,30 @@ export interface ProductWithImages extends Product {
   product_variants?: ProductVariant[];
 }
 
-/** VIP 가격이 해석된 상품 (스토어프론트 전달용) */
-export interface PricedProduct extends ProductWithImages {
-  /** 실제 판매가 (VIP 반영) */
+/**
+ * 카드/목록 표시에 필요한 만큼만 담은 상품 행.
+ *
+ * 목록 쿼리가 `select("*")` 였을 때 응답의 58%가 카드에서 전혀 쓰이지 않는
+ * 본문 컬럼(description·story·specs·nutrition)이었다. 여기에 더해 원가(cost_price)와
+ * 공급 라인(supplier)은 고객 화면에 나갈 이유가 없는 내부 정보라 함께 제외한다.
+ *
+ * ProductWithImages 에서 필드를 뺀 형태이므로 ProductWithImages 값은 그대로 대입된다
+ * — 상세 페이지처럼 전체 행을 가진 곳은 수정 없이 같은 카드 컴포넌트를 쓸 수 있다.
+ */
+export type ProductCardRow = Omit<
+  ProductWithImages,
+  | "description"
+  | "story"
+  | "specs"
+  | "nutrition"
+  | "cost_price"
+  | "supplier"
+  | "product_variants"
+>;
+
+/** VIP 가격이 해석된 카드 행 */
+export interface PricedProductCard extends ProductCardRow {
   effective_price: number;
-  /** VIP 할인 적용 여부 */
   vip_applied: boolean;
 }
 

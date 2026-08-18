@@ -4,10 +4,9 @@ import Reveal from "@/components/shop/Reveal";
 import RevealText from "@/components/shop/RevealText";
 import SectionTitle from "@/components/shop/SectionTitle";
 import Accordion, { type AccordionItem } from "@/components/about/Accordion";
-import { createClient } from "@/lib/supabase/server";
+import { getCachedNotices } from "@/lib/cache";
 import { formatDate } from "@/lib/format";
 import { COMPANY } from "@/lib/constants";
-import type { Notice } from "@/lib/types";
 
 export const metadata: Metadata = {
   title: "고객센터",
@@ -199,16 +198,9 @@ const SECTION_NAV = [
 ];
 
 export default async function SupportPage() {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("notices")
-    .select("*")
-    .eq("is_active", true)
-    .order("is_pinned", { ascending: false })
-    .order("created_at", { ascending: false })
-    .limit(30);
-
-  const notices = (data ?? []) as Notice[];
+  // 공지는 누가 보든 동일한 공용 데이터다 — 캐시 계층이 활성 공지 30건을
+  // 고정(is_pinned) 우선 · 최신순으로 돌려준다.
+  const notices = await getCachedNotices(30);
 
   const noticeItems: AccordionItem[] = notices.map((notice) => ({
     id: notice.id,

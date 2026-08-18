@@ -1,9 +1,41 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * 배너/팝업/공지 공용 CRUD 헬퍼 — 각 route.ts가 리소스 설정과 함께 호출한다.
  */
+
+/* ---------- 스토어프론트 캐시 무효화 ---------- */
+
+/**
+ * 즉시 만료 프로파일.
+ *
+ * Next 16 에서 revalidateTag 의 두 번째 인자(profile)는 **필수**다.
+ * 단일 인자 형태는 deprecated 이고 타입 정의상 컴파일도 되지 않는다.
+ *   revalidateTag(tag: string, profile: string | { expire?: number }): void
+ *
+ * profile 을 "max" 로 주면 stale-while-revalidate 가 되어, 관리자가 저장한 직후
+ * 방문자(및 관리자 자신)가 이전 내용을 한 번 더 보게 된다.
+ * 캐시 도입 전에는 매 요청이 DB 를 새로 읽어 그런 지연이 아예 없었으므로,
+ * 기존 표시 동작을 1:1 로 보존하려면 즉시 만료여야 한다.
+ * { expire: 0 } 이 (deprecated 된) 단일 인자 형태와 정확히 동일한 즉시 만료다.
+ * ─ next/dist/server/web/spec-extension/revalidate.js 참고:
+ *   `if (!profile || cacheLife?.expire === 0)` 인 경로만 즉시 만료로 처리된다.
+ *
+ * updateTag 는 Route Handler 에서 호출하면 throw 하므로(E872) 여기서는 쓸 수 없다.
+ */
+const IMMEDIATE = { expire: 0 } as const;
+
+/**
+ * banners / popups / notices 는 셋 다 홈·고객센터에 노출되므로
+ * 어느 테이블이 바뀌든 content 태그 하나만 무효화하면 된다.
+ * 쓰기가 실제로 성공한 뒤에만 호출한다.
+ */
+function revalidateContent() {
+  revalidateTag(CACHE_TAGS.content, IMMEDIATE);
+}
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -218,6 +250,7 @@ export async function createRow(resource: ContentResource, req: Request) {
       { status: 500 }
     );
   }
+  revalidateContent();
   return NextResponse.json({ [resource.singular]: data }, { status: 201 });
 }
 
@@ -254,8 +287,10 @@ export async function updateRow(resource: ContentResource, req: Request, id: str
     );
   }
   if (!data) {
+    // 매칭된 행이 없으면 실제 쓰기가 없었으므로 무효화하지 않는다.
     return NextResponse.json({ error: `${resource.label}을(를) 찾을 수 없습니다.` }, { status: 404 });
   }
+  revalidateContent();
   return NextResponse.json({ [resource.singular]: data });
 }
 
@@ -276,5 +311,6 @@ export async function deleteRow(resource: ContentResource, id: string) {
       { status: 500 }
     );
   }
+  revalidateContent();
   return NextResponse.json({ ok: true });
 }

@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { createServiceClient } from "@/lib/supabase/service";
+import { getCachedBulkProducts } from "@/lib/cache";
 import { COMPANY } from "@/lib/constants";
-import type { ProductWithImages } from "@/lib/types";
 import Reveal from "@/components/shop/Reveal";
 import RevealText from "@/components/shop/RevealText";
 import SectionTitle from "@/components/shop/SectionTitle";
@@ -15,21 +14,6 @@ export const metadata: Metadata = {
   description:
     "다름의 4kg 벌크 곤약쌀·곤약면과 발효곤약 페이스트 — 업소용 대용량, OEM·ODM, 원료 납품 문의를 받습니다.",
 };
-
-/**
- * 4kg 벌크·페이스트 7종은 견적 거래 품목이라 판매(장바구니·결제)를 열지 않는다.
- * 상품 자체는 draft 로 두고, 이 페이지에서 사양만 공개한 뒤 문의로 받는다.
- * draft 는 RLS 로 익명에게 가려지므로 여기서만 service role 로 읽는다.
- */
-async function getBulkProducts(): Promise<ProductWithImages[]> {
-  const service = createServiceClient();
-  const { data } = await service
-    .from("products")
-    .select("*, product_images(*)")
-    .contains("tags", ["B2B"])
-    .order("sort_order", { ascending: true });
-  return (data ?? []) as unknown as ProductWithImages[];
-}
 
 const CAPABILITIES = [
   {
@@ -51,7 +35,13 @@ const CAPABILITIES = [
 ];
 
 export default async function B2BPage() {
-  const products = await getBulkProducts();
+  /**
+   * 4kg 벌크·페이스트는 견적 거래 품목이라 판매(장바구니·결제)를 열지 않는다.
+   * 상품 자체는 draft 로 두고 여기서 사양만 공개한 뒤 문의로 받는다.
+   * draft 는 RLS 로 익명에게 가려지므로 캐시 계층이 service role 로 읽고,
+   * 쿠키·유저와 무관한 고정 목록이라 전 방문자가 같은 결과를 공유한다.
+   */
+  const products = await getCachedBulkProducts();
   const options: BulkProductOption[] = products.map((p) => ({ slug: p.slug, name: p.name }));
 
   return (

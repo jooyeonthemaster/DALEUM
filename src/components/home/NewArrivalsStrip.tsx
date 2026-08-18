@@ -1,12 +1,16 @@
 import type { CSSProperties } from "react";
-import type { ProductWithImages } from "@/lib/types";
+import type { ProductCardRow } from "@/lib/types";
 import ProductCard from "@/components/shop/ProductCard";
 import Reveal from "@/components/shop/Reveal";
 import SectionTitle from "@/components/shop/SectionTitle";
 
 export interface NewArrivalsStripProps {
-  /** 최신 등록 순 상품 */
-  products: ProductWithImages[];
+  /**
+   * 최신 등록 순 상품.
+   * 카드 표시에 필요한 컬럼만 담은 행이라, 전체 행(ProductWithImages)을 가진
+   * 호출부도 그대로 넘길 수 있다.
+   */
+  products: ProductCardRow[];
 }
 
 /**

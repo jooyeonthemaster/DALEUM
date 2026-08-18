@@ -1,6 +1,12 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
-import type { Banner, Category, Popup, ProductWithImages } from "@/lib/types";
+import {
+  getCachedCategories,
+  getCachedFeaturedProducts,
+  getCachedHeroBanners,
+  getCachedHomeReviews,
+  getCachedLatestProducts,
+  getCachedPopups,
+} from "@/lib/cache";
 import ProductCard from "@/components/shop/ProductCard";
 import Reveal from "@/components/shop/Reveal";
 import SectionTitle from "@/components/shop/SectionTitle";
@@ -9,7 +15,7 @@ import CertMarquee from "@/components/home/CertMarquee";
 import CategoryShowcase from "@/components/home/CategoryShowcase";
 import FermentStory from "@/components/home/FermentStory";
 import NewArrivalsStrip from "@/components/home/NewArrivalsStrip";
-import ReviewsSection, { type HomeReview } from "@/components/home/ReviewsSection";
+import ReviewsSection from "@/components/home/ReviewsSection";
 import BrandClosing from "@/components/home/BrandClosing";
 import PopupDisplay from "@/components/home/PopupDisplay";
 
@@ -19,9 +25,16 @@ export const metadata: Metadata = {
     "국내 최초 효모·유산균 발효곤약. 냄새는 덜고 식감은 살린 다름의 발효곤약 식탁을 만나보세요.",
 };
 
-const PRODUCT_SELECT = "*, product_images(*), categories(id, slug, name)";
+/** 쇼케이스가 실제로 배치할 수 있는 카테고리 수 — CategoryShowcase의 MAX_TILES와 한 쌍이다 */
+const SHOWCASE_LIMIT = 8;
 
-/** starts_at/ends_at 기간 유효성 */
+/**
+ * starts_at/ends_at 기간 유효성.
+ *
+ * 이 판정은 "지금"에 달렸으므로 반드시 캐시 밖(호출부)에 남는다.
+ * 캐시 함수 안으로 옮기면 revalidate 주기 동안 판정이 그 시각으로 굳어,
+ * 기간이 끝난 배너/팝업이 계속 노출되거나 시작된 배너가 안 뜬다.
+ */
 function isWithinPeriod(
   startsAt: string | null,
   endsAt: string | null,
@@ -32,70 +45,24 @@ function isWithinPeriod(
   return true;
 }
 
-/** 조인 결과가 배열/단일 어느 쪽으로 와도 첫 항목을 취한다 */
-function one<T>(value: T | T[] | null | undefined): T | null {
-  if (Array.isArray(value)) return value[0] ?? null;
-  return value ?? null;
-}
-
-interface ReviewRow {
-  id: string;
-  rating: number;
-  content: string;
-  profiles: { name: string | null } | { name: string | null }[] | null;
-  products: { name: string } | { name: string }[] | null;
-}
-
 export default async function HomePage() {
-  const supabase = await createClient();
   const now = new Date();
 
-  const [bannersRes, categoriesRes, featuredRes, latestRes, reviewsRes, popupsRes] =
+  // 홈은 전부 "누가 보든 같은" 공용 데이터라 전량 캐시 계층을 거친다.
+  // (조인 정규화·필드 선별은 캐시 함수 안에서 이미 끝난 상태로 돌아온다.)
+  const [banners, categories, featuredRows, latest, reviews, popups] =
     await Promise.all([
-      supabase
-        .from("banners")
-        .select("*")
-        .eq("placement", "hero")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
-      // 상한은 쇼케이스가 실제로 배치할 수 있는 수(8)에 맞춘다. 여기와
-      // CategoryShowcase의 slice는 반드시 같이 움직여야 한다 — 한쪽만 올리면
-      // 다른 쪽이 그대로 잘라서 카테고리가 소리 없이 사라진다.
-      supabase
-        .from("categories")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .order("slug", { ascending: true })
-        .limit(8),
-      supabase
-        .from("products")
-        .select(PRODUCT_SELECT)
-        .eq("is_featured", true)
-        .order("sort_order", { ascending: true })
-        .limit(4),
-      supabase
-        .from("products")
-        .select(PRODUCT_SELECT)
-        .order("created_at", { ascending: false })
-        .limit(8),
-      supabase
-        .from("reviews")
-        .select("id, rating, content, profiles(name), products(name)")
-        .eq("is_hidden", false)
-        .gte("rating", 4)
-        .order("created_at", { ascending: false })
-        .limit(3),
-      supabase
-        .from("popups")
-        .select("*")
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true }),
+      getCachedHeroBanners(),
+      getCachedCategories(),
+      getCachedFeaturedProducts(4),
+      getCachedLatestProducts(8),
+      getCachedHomeReviews(3),
+      getCachedPopups(),
     ]);
 
   // 히어로 배너 — 이미지가 있고 기간이 유효한 첫 배너만 사용
   const bannerRow =
-    ((bannersRes.data ?? []) as Banner[]).find(
+    banners.find(
       (b) => b.image_url && isWithinPeriod(b.starts_at, b.ends_at, now)
     ) ?? null;
   const heroBanner: HeroBanner | null = bannerRow
@@ -107,28 +74,17 @@ export default async function HomePage() {
       }
     : null;
 
-  const categories = (categoriesRes.data ?? []) as Category[];
-  const latest = (latestRes.data ?? []) as unknown as ProductWithImages[];
+  // 상한은 쇼케이스가 실제로 배치할 수 있는 수(8)에 맞춘다. 여기와
+  // CategoryShowcase의 slice는 반드시 같이 움직여야 한다 — 한쪽만 올리면
+  // 다른 쪽이 그대로 잘라서 카테고리가 소리 없이 사라진다.
+  const showcaseCategories = categories.slice(0, SHOWCASE_LIMIT);
 
   // 베스트 셀렉션 — is_featured 없으면 최신 4개로 대체해 빈 화면을 막는다
-  let featured = (featuredRes.data ?? []) as unknown as ProductWithImages[];
-  if (featured.length === 0) featured = latest.slice(0, 4);
-
-  const reviews: HomeReview[] = (
-    (reviewsRes.data ?? []) as unknown as ReviewRow[]
-  ).map((row) => ({
-    id: row.id,
-    rating: row.rating,
-    content: row.content,
-    name: one(row.profiles)?.name ?? null,
-    productName: one(row.products)?.name ?? null,
-  }));
+  const featured = featuredRows.length > 0 ? featuredRows : latest.slice(0, 4);
 
   // 팝업 — 활성 + 기간 유효한 첫 팝업만
   const popup =
-    ((popupsRes.data ?? []) as Popup[]).find((p) =>
-      isWithinPeriod(p.starts_at, p.ends_at, now)
-    ) ?? null;
+    popups.find((p) => isWithinPeriod(p.starts_at, p.ends_at, now)) ?? null;
 
   return (
     <>
@@ -139,7 +95,7 @@ export default async function HomePage() {
       <CertMarquee />
 
       {/* 3. 카테고리 쇼케이스 — 비대칭 그리드 */}
-      <CategoryShowcase categories={categories} />
+      <CategoryShowcase categories={showcaseCategories} />
 
       {/* 4. 베스트 셀렉션 */}
       {featured.length > 0 && (
@@ -170,7 +126,7 @@ export default async function HomePage() {
       {/* 6. 신상품 가로 스크롤 스트립 */}
       <NewArrivalsStrip products={latest} />
 
-      {/* 7. 리뷰/신뢰 */}
+      {/* 7. 리뷰/신뢰 — 이름은 캐시 계층이 적재 전에 홈 규칙(김지현 → 김*현)으로 마스킹해 둔다 */}
       <ReviewsSection reviews={reviews} />
 
       {/* 8. 브랜드 클로징 */}

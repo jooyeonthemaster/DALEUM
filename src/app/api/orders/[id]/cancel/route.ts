@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { createServiceClient } from "@/lib/supabase/service";
 import { cancelPayment, TossError } from "@/lib/toss";
 import { restoreOrderStock, isUuid, cleanStr, type FinalizableOrder } from "@/lib/orders";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * 주문 취소 (고객).
@@ -171,6 +173,8 @@ export async function POST(
   // 클레임 성공한 쪽만 재고 복구 (웹훅과 동시 처리 시 이중 복구 방지)
   if (claimed && claimed.length > 0) {
     await restoreOrderStock(service, order);
+    // 재고가 복구된 경우에만 무효화 — 품절 표시가 판매중으로 되돌아갈 수 있다
+    revalidateTag(CACHE_TAGS.products, { expire: 0 });
   }
 
   return NextResponse.json({ orderId: order.id, status: "cancelled" });

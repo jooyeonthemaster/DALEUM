@@ -1,17 +1,15 @@
 import type { Metadata } from "next";
-import { createClient } from "@/lib/supabase/server";
-import type { ProductWithImages } from "@/lib/types";
+import { unstable_cache } from "next/cache";
+import { CACHE_TAGS, PRODUCT_CARD_SELECT, TTL, VISIBLE_STATUSES } from "@/lib/cache";
+import { createPublicClient } from "@/lib/supabase/public";
+import type { PricedProductCard, ProductCardRow } from "@/lib/types";
 import ProductCard from "@/components/shop/ProductCard";
 import EmptyState from "@/components/shop/EmptyState";
 import Reveal from "@/components/shop/Reveal";
 import RevealText from "@/components/shop/RevealText";
 import PaginationNav from "@/components/catalog/PaginationNav";
 import SearchTracker from "@/components/catalog/SearchTracker";
-import {
-  PRODUCT_CARD_SELECT,
-  VISIBLE_STATUSES,
-  toPricedProducts,
-} from "@/components/catalog/queries";
+import { toPricedProducts } from "@/components/catalog/queries";
 
 const PAGE_SIZE = 24;
 
@@ -25,6 +23,62 @@ function first(v: string | string[] | undefined): string | undefined {
 function cleanQuery(raw: string | undefined): string {
   return (raw ?? "").replace(/[,()]/g, " ").replace(/\s+/g, " ").trim().slice(0, 60);
 }
+
+/**
+ * 검색 or() 필터 문자열.
+ * 캐시 콜백 두 곳이 **완전히 동일한 문자열**을 써야 개수와 목록이 어긋나지 않으므로
+ * 한 곳에서만 만든다. 입력은 항상 cleanQuery() 를 통과한 값이다.
+ */
+function buildOrFilter(q: string): string {
+  const pattern = `%${q}%`;
+  return `name.ilike.${pattern},subtitle.ilike.${pattern},description.ilike.${pattern}`;
+}
+
+/* ============================================================
+   검색 캐시 — 검색어에만 의존하는 공용 데이터.
+
+   검색 결과 자체는 로그인 여부와 무관하다(노출 상태 필터가 고정이다).
+   사용자마다 달라지는 것은 VIP 가격뿐이라, 그 해석(toPricedProducts)만
+   캐시 밖 요청 스코프에 남긴다.
+
+   전용 캐시 함수를 @/lib/cache 가 아니라 이 파일에 두는 이유는
+   orFilter 생성 규칙(cleanQuery + ilike 3컬럼)이 검색 라우트에만 속하기 때문이다.
+   캐시 키에는 keyParts 뿐 아니라 인자도 함께 들어가므로 검색어·페이지 조합마다
+   별도 엔트리가 생긴다.
+   ============================================================ */
+
+/** 검색 결과 개수 — 페이지 클램프에 필요하다. 빈 검색어로는 호출되지 않는다. */
+const getCachedSearchCount = unstable_cache(
+  async (q: string): Promise<number> => {
+    const supabase = createPublicClient();
+    const { count } = await supabase
+      .from("products")
+      .select("id", { count: "exact", head: true })
+      .in("status", [...VISIBLE_STATUSES])
+      .or(buildOrFilter(q));
+    return count ?? 0;
+  },
+  ["storefront:search:count"],
+  { tags: [CACHE_TAGS.products], revalidate: TTL.products }
+);
+
+/** 검색 결과 한 페이지. 정렬은 조회수 → 최신순 고정(검색에는 정렬 선택이 없다). */
+const getCachedSearchCards = unstable_cache(
+  async (q: string, page: number, pageSize: number): Promise<ProductCardRow[]> => {
+    const supabase = createPublicClient();
+    const { data } = await supabase
+      .from("products")
+      .select(PRODUCT_CARD_SELECT)
+      .in("status", [...VISIBLE_STATUSES])
+      .or(buildOrFilter(q))
+      .order("view_count", { ascending: false })
+      .order("created_at", { ascending: false })
+      .range((page - 1) * pageSize, page * pageSize - 1);
+    return (data ?? []) as unknown as ProductCardRow[];
+  },
+  ["storefront:search:cards"],
+  { tags: [CACHE_TAGS.products], revalidate: TTL.products }
+);
 
 export async function generateMetadata({
   searchParams,
@@ -46,7 +100,6 @@ export default async function SearchPage({
 }) {
   const sp = await searchParams;
   const q = cleanQuery(first(sp.q));
-  const supabase = await createClient();
 
   if (!q) {
     return (
@@ -71,17 +124,10 @@ export default async function SearchPage({
     );
   }
 
-  const pattern = `%${q}%`;
-  const orFilter = `name.ilike.${pattern},subtitle.ilike.${pattern},description.ilike.${pattern}`;
-
   // ---------- 개수 → 페이지 클램프 → 결과 조회 ----------
-  const { count } = await supabase
-    .from("products")
-    .select("id", { count: "exact", head: true })
-    .in("status", [...VISIBLE_STATUSES])
-    .or(orFilter);
-
-  const total = count ?? 0;
+  // 페이지 번호가 총 개수에 걸려 클램프되므로 두 조회는 순서를 지켜야 한다.
+  // 다만 둘 다 캐시 계층을 거치므로 통상적으로는 DB 왕복이 발생하지 않는다.
+  const total = await getCachedSearchCount(q);
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rawPage = Number.parseInt(first(sp.page) ?? "1", 10);
   const page = Math.min(
@@ -89,19 +135,13 @@ export default async function SearchPage({
     totalPages
   );
 
-  let products: Awaited<ReturnType<typeof toPricedProducts>> = [];
+  // toPricedProducts 는 입력 타입을 보존하는 제네릭이라, 타입 인자를 명시하지 않으면
+  // 제약({id, price})으로만 좁혀져 카드 렌더에 필요한 필드가 사라진다.
+  let products: PricedProductCard[] = [];
   if (total > 0) {
-    const { data } = await supabase
-      .from("products")
-      .select(PRODUCT_CARD_SELECT)
-      .in("status", [...VISIBLE_STATUSES])
-      .or(orFilter)
-      .order("view_count", { ascending: false })
-      .order("created_at", { ascending: false })
-      .range((page - 1) * PAGE_SIZE, page * PAGE_SIZE - 1);
-    products = await toPricedProducts(
-      (data ?? []) as unknown as ProductWithImages[]
-    );
+    const rows = await getCachedSearchCards(q, page, PAGE_SIZE);
+    // VIP 가격만 요청마다 새로 해석한다 — 사용자별로 다르므로 캐시 대상이 아니다.
+    products = await toPricedProducts(rows);
   }
 
   return (

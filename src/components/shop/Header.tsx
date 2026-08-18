@@ -320,7 +320,15 @@ export default function Header({ user, categories }: HeaderProps) {
         </form>
       </div>
 
-      {/* 모바일 풀스크린 메뉴 */}
+      {/* 모바일 풀스크린 메뉴 —
+          이 오버레이는 조건부 렌더가 아니라 항상 DOM 에 있고 `invisible`(visibility:hidden)
+          로만 가려진다. visibility:hidden 은 레이아웃 박스를 그대로 남기므로
+          Next 의 <Link> 프리페치 IntersectionObserver(intersectionRatio > 0, rootMargin 200px)
+          가 "보인다"고 판단해, lg 미만 화면에서는 열지도 않은 메뉴의 링크 전부가
+          프리페치된다 — 링크 하나당 서버에서 레이아웃~loading 경계까지 실제로 렌더된다.
+          그래서 이 사본의 링크에는 prefetch={false} 를 준다. 데스크톱 주 내비는 `hidden lg:flex`
+          라 lg 미만에서 display:none 이고(박스가 없어 프리페치 안 됨), 여기가 유일한 압력원이다.
+          메뉴를 열고 실제로 누를 때 가져오면 되므로 체감 차이는 없다. */}
       <div
         data-lenis-prevent
         aria-hidden={!mobileOpen}
@@ -331,6 +339,7 @@ export default function Header({ user, categories }: HeaderProps) {
         <div className="container-hall flex h-16 shrink-0 items-center justify-between">
           <Link
             href="/"
+            prefetch={false}
             className="flex items-center"
             onClick={() => setMobileOpen(false)}
           >
@@ -360,6 +369,7 @@ export default function Header({ user, categories }: HeaderProps) {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className={`headline-serif py-2.5 text-3xl transition-all duration-700 ease-hall ${
                 mobileOpen ? "translate-y-0 opacity-100" : "translate-y-6 opacity-0"
@@ -383,6 +393,7 @@ export default function Header({ user, categories }: HeaderProps) {
                   <Link
                     key={cat.id}
                     href={`/products?category=${cat.slug}`}
+                    prefetch={false}
                     onClick={() => setMobileOpen(false)}
                     className="py-1.5 text-base text-ink-600"
                   >
@@ -398,20 +409,21 @@ export default function Header({ user, categories }: HeaderProps) {
           <div className="container-hall flex items-center justify-between py-5">
             <div className="flex items-center gap-5 text-sm font-medium">
               {user ? (
-                <Link href="/mypage" onClick={() => setMobileOpen(false)}>
+                <Link href="/mypage" prefetch={false} onClick={() => setMobileOpen(false)}>
                   마이페이지
                 </Link>
               ) : (
-                <Link href="/login" onClick={() => setMobileOpen(false)}>
+                <Link href="/login" prefetch={false} onClick={() => setMobileOpen(false)}>
                   로그인
                 </Link>
               )}
-              <Link href="/cart" onClick={() => setMobileOpen(false)}>
+              <Link href="/cart" prefetch={false} onClick={() => setMobileOpen(false)}>
                 장바구니
               </Link>
             </div>
             <Link
               href="/vip"
+              prefetch={false}
               onClick={() => setMobileOpen(false)}
               className="label-caps flex items-center gap-2 text-brass-700"
             >

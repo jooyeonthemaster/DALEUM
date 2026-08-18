@@ -13,6 +13,22 @@ import ShopModal from "./ShopModal";
 
 const MIN_CONTENT_LENGTH = 10;
 
+/**
+ * 리뷰 작성/삭제가 상품 상세의 캐시된 리뷰 목록에 곧바로 반영되도록 서버 캐시를 무효화한다.
+ *
+ * 리뷰 쓰기는 브라우저에서 Supabase 로 직접 하므로 서버에 revalidateTag 를 부를 지점이 없다.
+ * 이 화면 자체는 load() 로 Supabase 를 다시 읽어 캐시와 무관하지만, 같은 리뷰를 캐시로
+ * 들고 있는 상품 상세 페이지는 이 호출이 없으면 최대 TTL(180초) 동안 옛 목록을 보여준다.
+ * 실패해도 삼킨다(그 TTL 이 안전망).
+ */
+async function revalidateReviewsCache() {
+  await fetch("/api/cache/revalidate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "reviews" }),
+  }).catch(() => {});
+}
+
 interface PendingItem {
   orderItemId: string;
   productId: string;
@@ -211,8 +227,11 @@ export default function ReviewsClient() {
       setFormError("리뷰 등록에 실패했습니다. 잠시 후 다시 시도해 주세요.");
       return;
     }
+    // 모달을 먼저 닫는다 — 무효화를 기다리는 동안 폼이 열린 채 남으면
+    // busy 가 이미 false 라 같은 리뷰가 한 번 더 등록될 수 있다.
     setWriting(null);
     setTab("written");
+    await revalidateReviewsCache();
     await load();
   };
 
@@ -228,6 +247,8 @@ export default function ReviewsClient() {
       setError("리뷰 삭제에 실패했습니다. 잠시 후 다시 시도해 주세요.");
     }
     setDeleting(null);
+    // 실제로 지워졌을 때만 무효화한다 — 실패했는데 캐시를 비우면 부하만 늘고 얻는 게 없다.
+    if (!deleteError) await revalidateReviewsCache();
     await load();
   };
 

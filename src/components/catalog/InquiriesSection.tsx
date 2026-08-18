@@ -30,6 +30,22 @@ export interface InquiriesSectionProps {
 
 const PAGE = 5;
 
+/**
+ * 방금 등록한 문의가 곧바로 보이도록 서버 캐시를 무효화한다.
+ *
+ * 문의 INSERT 는 브라우저에서 Supabase 로 직접 하므로 서버에 revalidateTag 를 부를
+ * 지점이 없다. 이 얇은 요청이 그 자리를 대신한다. 반드시 router.refresh() **전에**
+ * 끝나야 한다 — 먼저 refresh 하면 아직 살아 있는 캐시를 다시 읽어 방금 쓴 글이 빠진다.
+ * 실패해도 삼킨다(cache.ts 의 TTL 이 안전망).
+ */
+async function revalidateInquiriesCache() {
+  await fetch("/api/cache/revalidate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ scope: "inquiries" }),
+  }).catch(() => {});
+}
+
 /** 상품 문의 — 목록(비밀글 잠금 표시) + 작성 폼 */
 export default function InquiriesSection({
   productId,
@@ -79,6 +95,7 @@ export default function InquiriesSection({
       setQuestion("");
       setIsPrivate(false);
       setDoneMessage("문의가 등록되었습니다. 확인 후 답변드리겠습니다.");
+      await revalidateInquiriesCache();
       router.refresh();
     } finally {
       setSubmitting(false);

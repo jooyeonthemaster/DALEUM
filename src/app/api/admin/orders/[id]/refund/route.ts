@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { cancelPayment, TossError } from "@/lib/toss";
 import {
@@ -9,6 +10,7 @@ import {
   type FinalizableOrder,
 } from "@/lib/orders";
 import { krw } from "@/lib/format";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * POST /api/admin/orders/[id]/refund — 관리자 환불/취소 처리.
@@ -175,8 +177,11 @@ export async function POST(
     .select("id");
 
   // 클레임 성공한 쪽만 재고 복구 (웹훅 등과 동시 처리 시 이중 복구 방지)
+  // 부분 환불은 위에서 이미 return 했다 — 재고를 건드리지 않으므로 무효화도 하지 않는다.
   if (claimed && claimed.length > 0) {
     await restoreOrderStock(service, order);
+    // 재고가 복구된 경우에만 무효화 — 품절 표시가 판매중으로 되돌아갈 수 있다
+    revalidateTag(CACHE_TAGS.products, { expire: 0 });
   }
 
   return NextResponse.json({ orderId: order.id, status: nextStatus, refunded: "full" });

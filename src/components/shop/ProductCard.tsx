@@ -1,12 +1,16 @@
 import Image from "next/image";
 import Link from "next/link";
-import type { PricedProduct, ProductWithImages } from "@/lib/types";
+import type { PricedProductCard, ProductCardRow } from "@/lib/types";
 import { STORAGE_TYPE_LABELS } from "@/lib/constants";
 import PriceTag from "./PriceTag";
 
 export interface ProductCardProps {
-  /** PricedProduct(VIP 가격 해석 완료)면 VIP 표기까지 자동 처리 */
-  product: ProductWithImages | PricedProduct;
+  /**
+   * PricedProductCard(VIP 가격 해석 완료)면 VIP 표기까지 자동 처리.
+   * ProductCardRow 는 전체 행(ProductWithImages)에서 카드에 안 쓰는 컬럼을 뺀 형태라,
+   * 전체 행을 가진 호출부(상세 페이지 등)도 그대로 넘길 수 있다.
+   */
+  product: ProductCardRow | PricedProductCard;
   /** 첫 화면에 보이는 카드만 true (next/image priority) */
   priority?: boolean;
   className?: string;

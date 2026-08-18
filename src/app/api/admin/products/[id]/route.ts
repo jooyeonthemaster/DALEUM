@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 import { isUuid } from "@/lib/orders";
 import {
   InputError,
@@ -262,6 +264,10 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
     .eq("id", id)
     .maybeSingle();
 
+  // 여기까지 왔다면 상품 본문/이미지/옵션 중 하나 이상이 실제로 반영된 뒤다
+  // (본문 update 가 실패하는 경로는 위에서 이미 500 으로 빠져나간다).
+  revalidateTag(CACHE_TAGS.products, { expire: 0 });
+
   return NextResponse.json({
     product: refreshed,
     ...(warnings.length ? { warning: warnings.join(" ") } : {}),
@@ -293,6 +299,9 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     console.error("[admin/products] 삭제 실패:", error.message);
     return NextResponse.json({ error: "상품 삭제에 실패했습니다." }, { status: 500 });
   }
+
+  // 삭제 성공 — 목록/개수/상세/관련상품 캐시가 모두 이 태그에 걸려 있다.
+  revalidateTag(CACHE_TAGS.products, { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }

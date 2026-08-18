@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 import { cleanStr } from "@/lib/orders";
 import { slugify } from "@/lib/format";
 import {
@@ -429,6 +431,13 @@ export async function POST(req: Request) {
       const result = results.find((r) => r.row_no === item.rowNo);
       if (!result || !result.ok) continue;
       await createOne(service, user.id, item, result);
+    }
+
+    // 실제로 insert 된 행이 하나라도 있을 때만 무효화한다.
+    // mode==="validate" 는 SELECT 뿐이고, create 여도 전 행이 검증에서 걸리면 쓰기가 없다.
+    // product_id 는 createOne 이 상품 insert 에 성공했을 때만 채운다.
+    if (results.some((r) => r.product_id)) {
+      revalidateTag(CACHE_TAGS.products, { expire: 0 });
     }
   }
 

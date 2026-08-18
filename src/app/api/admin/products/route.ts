@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 import { isUuid } from "@/lib/orders";
 import {
   InputError,
@@ -195,6 +197,10 @@ export async function POST(req: Request) {
     const { error } = await service.from("inventory_logs").insert(logs);
     if (error) warnings.push("최초 재고 이력 기록에 실패했습니다.");
   }
+
+  // 상품 행이 실제로 insert 된 뒤이므로 카탈로그 캐시를 무효화한다.
+  // (이미지/옵션/재고 로그는 실패해도 warning 으로만 남고 상품 자체는 이미 존재한다.)
+  revalidateTag(CACHE_TAGS.products, { expire: 0 });
 
   return NextResponse.json(
     { product: created, ...(warnings.length ? { warning: warnings.join(" ") } : {}) },

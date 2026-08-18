@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 import { isUuid } from "@/lib/orders";
 import { parseCategoryFields } from "./shared";
 
@@ -92,6 +94,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "카테고리 등록에 실패했습니다." }, { status: 500 });
   }
 
+  // 신규 카테고리는 헤더/카테고리 탭 목록에 바로 나타나야 한다.
+  // (소속 상품이 아직 없으므로 products 태그는 건드리지 않는다.)
+  revalidateTag(CACHE_TAGS.categories, { expire: 0 });
+
   return NextResponse.json({ category: created }, { status: 201 });
 }
 
@@ -114,9 +120,16 @@ export async function PUT(req: NextRequest) {
     const { error } = await service.from("categories").update({ sort_order: i }).eq("id", id);
     if (error) {
       console.error("[admin/categories] 순서 변경 실패:", error.message);
+      // 이 루프는 트랜잭션이 아니라 여기까지의 반복분은 이미 커밋돼 있다.
+      // 실패로 빠져나가더라도 캐시를 비워 화면과 DB 를 어긋난 채로 두지 않는다.
+      revalidateTag(CACHE_TAGS.categories, { expire: 0 });
       return NextResponse.json({ error: "순서 변경에 실패했습니다." }, { status: 500 });
     }
   }
+
+  // sort_order 재부여 완료 — getCachedCategories 가 sort_order 로 정렬하므로
+  // 무효화하지 않으면 헤더/탭 순서가 예전 그대로 남는다.
+  revalidateTag(CACHE_TAGS.categories, { expire: 0 });
 
   return NextResponse.json({ ok: true });
 }

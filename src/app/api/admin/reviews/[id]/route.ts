@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * PATCH /api/admin/reviews/[id]
@@ -68,7 +70,17 @@ export async function PATCH(
     return NextResponse.json({ error: "리뷰를 수정하지 못했습니다." }, { status: 500 });
   }
   if (!data) {
+    // 매칭된 행이 없으면 실제 쓰기가 없었으므로 무효화하지 않는다.
     return NextResponse.json({ error: "리뷰를 찾을 수 없습니다." }, { status: 404 });
   }
+
+  // is_hidden 토글과 admin_reply 는 상품상세 리뷰 목록(getCachedReviews)과
+  // 홈 리뷰 캐러셀(getCachedHomeReviews) 양쪽에 영향을 준다 — 둘 다 reviews 태그다.
+  //
+  // 두 번째 인자는 Next 16 에서 필수. { expire: 0 } = 즉시 만료.
+  // "max"(stale-while-revalidate)면 신고성 리뷰를 숨긴 직후에도 그 리뷰가
+  // 한 번 더 노출되므로, 숨김 처리에는 즉시 만료가 맞다.
+  revalidateTag(CACHE_TAGS.reviews, { expire: 0 });
+
   return NextResponse.json({ review: data });
 }

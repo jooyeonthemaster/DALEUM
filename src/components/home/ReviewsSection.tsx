@@ -1,12 +1,17 @@
 import Reveal from "@/components/shop/Reveal";
 import SectionTitle from "@/components/shop/SectionTitle";
 
-/** 홈 후기 표시용 축약 타입 (page.tsx에서 매핑해 전달) */
+/**
+ * 홈 후기 표시용 축약 타입.
+ * 이름은 이미 마스킹된 상태로 들어온다 — 캐시 계층(lib/cache.ts 의 maskHomeName)이
+ * 원본 이름을 공유 캐시에 남기지 않으려고 적재 전에 마스킹을 끝내기 때문이다.
+ * 여기서 다시 마스킹하면 "김*현" 이 "김**" 로 뭉개진다.
+ */
 export interface HomeReview {
   id: string;
   rating: number;
   content: string;
-  name: string | null;
+  maskedName: string;
   productName: string | null;
 }
 
@@ -22,7 +27,7 @@ const FALLBACK_REVIEWS: HomeReview[] = [
     rating: 5,
     content:
       "곤약 특유의 냄새가 정말 안 나서 놀랐어요. 헹구지 않고 바로 조리해도 비린내가 없고, 아이들도 국수인 줄 알고 잘 먹습니다.",
-    name: "김지현",
+    maskedName: "김*현",
     productName: "발효곤약면",
   },
   {
@@ -30,7 +35,7 @@ const FALLBACK_REVIEWS: HomeReview[] = [
     rating: 5,
     content:
       "저녁마다 밥에 섞어 먹은 지 두 달째예요. 식감이 밥알과 잘 어울려서 거부감이 없고, 속이 한결 가볍습니다.",
-    name: "박서연",
+    maskedName: "박*연",
     productName: "곤약쌀",
   },
   {
@@ -38,7 +43,7 @@ const FALLBACK_REVIEWS: HomeReview[] = [
     rating: 4,
     content:
       "야식으로 떡볶이를 포기 못 했는데 이걸로 바꾸고 나서 부담이 훨씬 줄었어요. 쫄깃한 식감은 그대로라 만족합니다.",
-    name: "이준호",
+    maskedName: "이*호",
     productName: "곤약 떡볶이떡",
   },
 ];
@@ -57,15 +62,6 @@ function Stars({ rating }: { rating: number }) {
       ))}
     </div>
   );
-}
-
-/** 이름 마스킹 — 김지현 → 김*현 */
-function maskName(name: string | null): string {
-  const t = name?.trim() ?? "";
-  if (t.length === 0) return "다름 고객";
-  if (t.length === 1) return t;
-  if (t.length === 2) return `${t[0]}*`;
-  return `${t[0]}${"*".repeat(t.length - 2)}${t[t.length - 1]}`;
 }
 
 /** 리뷰/신뢰 섹션 — 세리프 인용 2~3개 + 별점 */
@@ -104,7 +100,7 @@ export default function ReviewsSection({ reviews }: ReviewsSectionProps) {
                 </blockquote>
                 <figcaption className="mt-8 flex items-center gap-3 text-[13px] text-ink-500">
                   <span className="font-medium text-ink-700">
-                    {maskName(review.name)} 님
+                    {review.maskedName} 님
                   </span>
                   {review.productName && (
                     <>

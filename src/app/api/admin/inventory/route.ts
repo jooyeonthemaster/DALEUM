@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { isUuid, cleanStr } from "@/lib/orders";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /* ============================================================
    GET  /api/admin/inventory — 재고 현황 (상품/옵션 단위 행 + 요약)
@@ -217,6 +219,12 @@ export async function POST(req: Request) {
     console.error("[admin/inventory] 재고 조정 실패:", error.message);
     return NextResponse.json({ error: "재고 조정에 실패했습니다." }, { status: 500 });
   }
+
+  // 재고가 바뀌었으므로 카탈로그 캐시를 무효화한다.
+  // 품절 → 판매중 복귀가 일어나는 유일한 경로라 여기가 빠지면 입고해도 TTL 만료까지 품절로 보인다.
+  // { expire: 0 } = 즉시 만료. 권장값 "max"(stale-while-revalidate)를 쓰면 입고 직후 한 번은
+  // 낡은 품절 표시가 그대로 나가므로, 관리자가 입고 후 바로 확인하는 이 화면에는 맞지 않는다.
+  revalidateTag(CACHE_TAGS.products, { expire: 0 });
 
   // 변경 후 재고 조회
   let stock: number | null = null;

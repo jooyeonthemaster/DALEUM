@@ -2,18 +2,18 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { cache } from "react";
-import type { SupabaseClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
-import { createServiceClient } from "@/lib/supabase/service";
+import {
+  getCachedInquiries,
+  getCachedProductBySlug,
+  getCachedRelatedProducts,
+  getCachedReviews,
+  getCachedShippingSettings,
+} from "@/lib/cache";
 import { resolvePrice } from "@/lib/pricing";
-import { getShippingSettings } from "@/lib/shipping";
 import { COMPANY, STORAGE_TYPE_LABELS } from "@/lib/constants";
 import { krw } from "@/lib/format";
-import type {
-  ProductVariant,
-  ProductWithImages,
-  StorageType,
-} from "@/lib/types";
+import type { ProductVariant, StorageType } from "@/lib/types";
 import ProductCard from "@/components/shop/ProductCard";
 import SectionTitle from "@/components/shop/SectionTitle";
 import Reveal from "@/components/shop/Reveal";
@@ -38,8 +38,6 @@ import InquiriesSection, {
 } from "@/components/catalog/InquiriesSection";
 import ProductViewTracker from "@/components/catalog/ProductViewTracker";
 import {
-  PRODUCT_CARD_SELECT,
-  VISIBLE_STATUSES,
   getRequestVipPricing,
   toPricedProducts,
 } from "@/components/catalog/queries";
@@ -65,29 +63,19 @@ function normalizeSlug(slug: string): string {
   }
 }
 
-const fetchProductBySlug = cache(async (slug: string) => {
-  const supabase = await createClient();
-  const { data } = await supabase
-    .from("products")
-    .select("*, product_images(*), product_variants(*), categories(id, slug, name)")
-    .eq("slug", slug)
-    .in("status", [...VISIBLE_STATUSES])
-    .maybeSingle();
-  return data as unknown as ProductWithImages | null;
-});
+/**
+ * 조회 자체는 캐시 계층(요청 간 재사용)이 맡고, 이 React cache() 래퍼는
+ * 같은 요청 안에서 generateMetadata 와 페이지 컴포넌트가 두 번 부르는 것을 접는다.
+ */
+const fetchProductBySlug = cache((slug: string) => getCachedProductBySlug(slug));
 
 /**
  * 정규화된 slug 로만 cache() 키가 잡히므로 generateMetadata 와 페이지 컴포넌트가
  * 서로 다른 형태(디코딩/인코딩)를 받아도 같은 상품을 얻고, 요청당 조회는 1회로 유지된다.
+ * 캐시 계층 키도 정규화된 slug 하나로 통일된다.
  */
 function getProduct(slug: string) {
   return fetchProductBySlug(normalizeSlug(slug));
-}
-
-function maskName(name: string | null | undefined): string {
-  const trimmed = name?.trim();
-  if (!trimmed) return "익명";
-  return `${trimmed[0]}**`;
 }
 
 const STORAGE_SHIPPING_NOTES: Record<StorageType, string> = {
@@ -132,9 +120,26 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
   if (!product) notFound();
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+
+  // ---------- 1단계: 상품 하나만 알면 되는 조회를 한 번에 띄운다 ----------
+  // 리뷰·문의·배송설정·관련상품은 방문자가 누구든 동일한 공용 데이터라 캐시 계층이 맡는다.
+  // 로그인 유저와 VIP 컨텍스트만 요청마다 새로 푼다(사용자 종속이라 캐시 금지).
+  const [
+    userResult,
+    vip,
+    cachedReviews,
+    cachedInquiries,
+    shippingSettings,
+    relatedRows,
+  ] = await Promise.all([
+    supabase.auth.getUser(),
+    getRequestVipPricing(),
+    getCachedReviews(product.id),
+    getCachedInquiries(product.id),
+    getCachedShippingSettings(),
+    getCachedRelatedProducts(product.id, product.category_id, 4),
+  ]);
+  const user = userResult.data.user;
 
   const images = [...(product.product_images ?? [])]
     .sort((a, b) => a.sort_order - b.sort_order)
@@ -145,47 +150,48 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
     .filter((v) => v.is_active)
     .sort((a, b) => a.sort_order - b.sort_order);
 
-  // ---------- VIP 가격 해석 (상품 + 옵션별) ----------
-  const vip = await getRequestVipPricing();
-  let effectivePrice = product.price;
-  let vipApplied = false;
-  const options: PurchaseOption[] = [];
-
-  if (vip) {
-    const base = await resolvePrice(
-      vip.service,
-      { id: product.id, price: product.price },
-      vip.ctx
-    );
-    effectivePrice = Math.min(base.effective, product.price);
-    vipApplied = base.vipApplied && effectivePrice < product.price;
-  }
-  for (const v of variants) {
-    const original = product.price + v.price_delta;
-    let effective = original;
-    if (vip) {
-      const resolved = await resolvePrice(
+  // ---------- 2단계: 1단계 결과에 의존하는 것들 — 서로는 독립이라 함께 띄운다 ----------
+  // (a) VIP 가격 해석: 기본가 + 옵션별. 옵션마다 독립 조회라 순차 왕복할 이유가 없다.
+  //     Promise.all + map 이므로 options 배열 순서는 variants 순서 그대로 유지된다.
+  const basePricePromise = vip
+    ? resolvePrice(
         vip.service,
-        { id: product.id, price: original },
+        { id: product.id, price: product.price },
         vip.ctx
-      );
-      effective = Math.min(resolved.effective, original);
-    }
-    options.push({
-      id: v.id,
-      name: v.name,
-      priceDelta: v.price_delta,
-      stock: v.stock,
-      effectivePrice: effective,
-      originalPrice: original,
-    });
-  }
+      )
+    : null;
+  const optionsPromise = Promise.all(
+    variants.map(async (v): Promise<PurchaseOption> => {
+      const original = product.price + v.price_delta;
+      let effective = original;
+      if (vip) {
+        const resolved = await resolvePrice(
+          vip.service,
+          { id: product.id, price: original },
+          vip.ctx
+        );
+        effective = Math.min(resolved.effective, original);
+      }
+      return {
+        id: v.id,
+        name: v.name,
+        priceDelta: v.price_delta,
+        stock: v.stock,
+        effectivePrice: effective,
+        originalPrice: original,
+      };
+    })
+  );
 
-  // ---------- 위시리스트 / 리뷰 작성 가능 여부 (로그인 시) ----------
-  let wished = false;
-  let orderItemId: string | null = null;
-  let alreadyReviewed = false;
-  if (user) {
+  // (b) 위시리스트 / 리뷰 작성 가능 여부 — 로그인 사용자 종속이라 캐시하지 않는다.
+  const viewerStatePromise = (async () => {
+    if (!user) {
+      return {
+        wished: false,
+        orderItemId: null as string | null,
+        alreadyReviewed: false,
+      };
+    }
     const [wishResult, orderItemResult, myReviewResult] = await Promise.all([
       supabase
         .from("wishlists")
@@ -207,107 +213,54 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
         .eq("user_id", user.id)
         .limit(1),
     ]);
-    wished = wishResult.data != null;
-    orderItemId = orderItemResult.data?.[0]?.id ?? null;
-    alreadyReviewed = (myReviewResult.data?.length ?? 0) > 0;
-  }
+    return {
+      wished: wishResult.data != null,
+      orderItemId: (orderItemResult.data?.[0]?.id ?? null) as string | null,
+      alreadyReviewed: (myReviewResult.data?.length ?? 0) > 0,
+    };
+  })();
 
-  // ---------- 리뷰/문의 (작성자 이름 마스킹을 위해 service client) ----------
-  const service = createServiceClient();
-  const [reviewsResult, inquiriesResult, shippingSettings] = await Promise.all([
-    service
-      .from("reviews")
-      .select("id, user_id, order_item_id, rating, content, image_urls, admin_reply, created_at, profiles(name)")
-      .eq("product_id", product.id)
-      .eq("is_hidden", false)
-      .order("created_at", { ascending: false })
-      .limit(200),
-    service
-      .from("product_inquiries")
-      .select("id, user_id, question, answer, is_private, answered_at, created_at, profiles(name)")
-      .eq("product_id", product.id)
-      .order("created_at", { ascending: false })
-      .limit(100),
-    getShippingSettings(supabase as unknown as SupabaseClient),
+  const [basePrice, options, viewerState, related] = await Promise.all([
+    basePricePromise,
+    optionsPromise,
+    viewerStatePromise,
+    // 관련 상품의 VIP 가격도 사용자 종속이라 캐시 밖에서 요청마다 해석한다.
+    toPricedProducts(relatedRows),
   ]);
 
-  const reviews: ReviewItem[] = (
-    (reviewsResult.data ?? []) as unknown as {
-      id: string;
-      user_id: string;
-      order_item_id: string | null;
-      rating: number;
-      content: string;
-      image_urls: string[];
-      admin_reply: string | null;
-      created_at: string;
-      profiles: { name: string | null } | null;
-    }[]
-  ).map((r) => ({
-    id: r.id,
-    maskedName: maskName(r.profiles?.name),
-    rating: r.rating,
-    content: r.content,
-    imageUrls: r.image_urls ?? [],
-    isBuyer: r.order_item_id != null,
-    adminReply: r.admin_reply,
-    createdAt: r.created_at,
-  }));
+  let effectivePrice = product.price;
+  let vipApplied = false;
+  if (basePrice) {
+    effectivePrice = Math.min(basePrice.effective, product.price);
+    vipApplied = basePrice.vipApplied && effectivePrice < product.price;
+  }
+  const { wished, orderItemId, alreadyReviewed } = viewerState;
 
-  const inquiries: InquiryItem[] = (
-    (inquiriesResult.data ?? []) as unknown as {
-      id: string;
-      user_id: string;
-      question: string;
-      answer: string | null;
-      is_private: boolean;
-      answered_at: string | null;
-      created_at: string;
-      profiles: { name: string | null } | null;
-    }[]
-  ).map((q) => {
-    const isMine = user != null && q.user_id === user.id;
-    const locked = q.is_private && !isMine;
+  // ---------- 리뷰 ----------
+  // CachedReview 는 ReviewItem 과 필드가 1:1 이다 — 마스킹("김**")과 구매자 판정
+  // (order_item_id != null)까지 캐시 계층에서 끝나 있고, 원본 이름/user_id 는 담기지 않는다.
+  // 타입을 명시해 두어 한쪽 스키마가 어긋나면 컴파일 단계에서 깨지게 한다.
+  const reviews: ReviewItem[] = cachedReviews;
+
+  // ---------- 비공개 문의 잠금 판정 (반드시 캐시 밖, 현재 로그인 유저 기준) ----------
+  // 캐시에는 잠그지 않은 원본 + 작성자 id 가 들어 있다. 이 판정을 캐시 안으로 옮기면
+  // 먼저 방문한 사람 기준으로 잠금이 굳어 남의 비밀글 본문이 전원에게 노출된다.
+  // userId 는 여기서 소비되고 클라이언트로 내려가는 InquiryItem 에는 포함되지 않는다.
+  const inquiries: InquiryItem[] = cachedInquiries.map((q) => {
+    const isMine = user != null && q.userId === user.id;
+    const locked = q.isPrivate && !isMine;
     return {
       id: q.id,
-      maskedName: maskName(q.profiles?.name),
+      maskedName: q.maskedName,
       question: locked ? null : q.question,
       answer: locked ? null : q.answer,
-      isPrivate: q.is_private,
+      isPrivate: q.isPrivate,
       isMine,
+      // 잠금 여부와 무관하게 "답변 완료" 뱃지는 원본 기준으로 표시한다(기존 동작).
       answered: q.answer != null,
-      createdAt: q.created_at,
+      createdAt: q.createdAt,
     };
   });
-
-  // ---------- 관련 상품 (같은 카테고리 4개) ----------
-  let relatedRows: ProductWithImages[] = [];
-  if (product.category_id) {
-    const { data } = await supabase
-      .from("products")
-      .select(PRODUCT_CARD_SELECT)
-      .in("status", [...VISIBLE_STATUSES])
-      .eq("category_id", product.category_id)
-      .neq("id", product.id)
-      .order("view_count", { ascending: false })
-      .limit(4);
-    relatedRows = (data ?? []) as unknown as ProductWithImages[];
-  }
-  if (relatedRows.length < 4) {
-    const excludeIds = [product.id, ...relatedRows.map((p) => p.id)];
-    const { data } = await supabase
-      .from("products")
-      .select(PRODUCT_CARD_SELECT)
-      .in("status", [...VISIBLE_STATUSES])
-      .not("id", "in", `(${excludeIds.join(",")})`)
-      .order("created_at", { ascending: false })
-      .limit(4 - relatedRows.length);
-    relatedRows = [
-      ...relatedRows,
-      ...((data ?? []) as unknown as ProductWithImages[]),
-    ];
-  }
-  const related = await toPricedProducts(relatedRows);
 
   // ---------- 구매 박스 스펙 행 ----------
   const specRows: SpecRow[] = [

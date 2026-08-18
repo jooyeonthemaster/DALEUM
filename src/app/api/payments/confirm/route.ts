@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidateTag } from "next/cache";
 import { createServiceClient } from "@/lib/supabase/service";
 import { confirmPayment, getPayment, cancelPayment, TossError, type TossPayment } from "@/lib/toss";
 import { finalizePaidOrder, appendAdminMemo, type FinalizableOrder } from "@/lib/orders";
+import { CACHE_TAGS } from "@/lib/cache";
 
 /**
  * 토스 결제 승인.
@@ -125,8 +127,9 @@ export async function POST(req: NextRequest) {
   }
 
   // ---------- 확정 처리 (멱등) ----------
+  let claimed = false;
   try {
-    await finalizePaidOrder(service, order, payment);
+    ({ claimed } = await finalizePaidOrder(service, order, payment));
   } catch (e) {
     // 결제는 승인됨 — 상태 반영 실패는 웹훅이 재시도할 수 있으므로 기록만
     console.error(`[payments/confirm] 확정 처리 실패 order=${orderNo}:`, e);
@@ -135,6 +138,16 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+
+  // 재고가 실제로 차감된 경우에만 카탈로그 캐시를 무효화한다.
+  // claimed=false 는 웹훅이 먼저 확정한 중복 호출이라 재고가 그대로다 — 무효화할 것이 없다.
+  //
+  // 두 번째 인자 주의 (Next 16): revalidateTag 는 이제 profile 인자가 필수다.
+  // 권장값 "max" 는 stale-while-revalidate 라 무효화 직후 한 번은 낡은 값을 그대로 내보낸다
+  // — 품절 표시가 한 박자 늦는다는 뜻이라 재고 경로에는 맞지 않는다.
+  // { expire: 0 } 은 즉시 만료라 다음 조회부터 정확한 재고가 보인다.
+  // 재고 변동은 읽기 대비 드물어 이 블로킹 재조회 비용은 무시할 수준이다.
+  if (claimed) revalidateTag(CACHE_TAGS.products, { expire: 0 });
 
   return NextResponse.json({
     orderId: order.id,
