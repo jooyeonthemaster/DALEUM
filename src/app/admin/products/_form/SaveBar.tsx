@@ -7,12 +7,19 @@
    - 옛 바는 불투명한 배경으로 본문 위에 떠 있는데 탭 내용에 아래 여백이 없어서, 마지막 입력 줄
      ('재고 임계치' 행)이 바에 잘려 절반만 보였다. 아래 여백은 각 탭 래퍼가 책임지고,
      여기서는 겹치는 경계가 눈에 보이도록 위쪽 그림자를 넣는다.
+   - 바가 본문 여백 안쪽에서 끝나 좌우가 잘려 보였다. 관리자 셸의 <main> 은 px-4/sm:px-6/
+     lg:px-10 을 두는데 이 바는 그 안쪽 상자에 들어 있어서, 배경·윗선·그림자가 사이드바에
+     닿기 40px 전에 뚝 끊겼다. 그 40px 틈으로는 스크롤되는 본문이 그대로 비쳐서, 바가
+     화면에 붙은 띠가 아니라 왼쪽이 잘린 카드처럼 보였다. 셸의 여백만큼 음수 마진으로
+     끌어내고 같은 크기의 안쪽 여백을 되돌려 준다 — 배경은 끝에서 끝까지 덮이고,
+     안의 글자는 위쪽 입력칸과 여전히 같은 세로선에 선다.
    - 좌측 사이드바 아바타가 모바일에서 '취소' 버튼을 덮었다. 사이드바 쪽은 이 유닛 파일이
      아니라 손대지 않고, 저장 바를 그보다 위(z-30)로 올려 최소한 버튼은 눌리게 한다.
    - 등록 버튼만 있고 '지금 상태로 등록하면 고객에게 보이는지' 를 아무도 말해 주지 않았다.
    ============================================================ */
 
 import Link from "next/link";
+import { Trash2 } from "lucide-react";
 import { Help } from "@/components/admin/Field";
 import { BTN_GHOST, BTN_PRIMARY } from "../product-ui";
 
@@ -57,60 +64,65 @@ export default function SaveBar({
   issueCount,
 }: SaveBarProps) {
   return (
-    <div className="sticky bottom-0 z-30 mt-10 flex flex-col gap-3 border-t border-ink-200 bg-cream-50 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        {canDelete && (
-          <>
+    /* -mx/px 짝: 관리자 셸 <main> 의 px-4 sm:px-6 lg:px-10 과 반드시 같은 값이어야 한다.
+       한쪽만 바뀌면 바 안의 글자가 위쪽 입력칸과 어긋난다. */
+    <div className="sticky bottom-0 z-30 -mx-4 mt-10 border-t border-ink-200 bg-cream-50 px-4 py-4 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] sm:-mx-6 sm:px-6 lg:-mx-10 lg:px-10">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          {canDelete && (
+            <>
+              <button
+                type="button"
+                onClick={onDelete}
+                disabled={hasOrders || saving}
+                className="inline-flex items-center gap-1.5 text-sm text-ink-400 transition-colors hover:text-signal-red disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                <Trash2 size={14} strokeWidth={1.5} />
+                상품 삭제
+              </button>
+              {hasOrders && (
+                <Help>주문 이력이 있어 삭제할 수 없습니다. 상태를 숨김으로 변경해 주세요.</Help>
+              )}
+            </>
+          )}
+          {draftSavedAt !== null && (
+            // '저장했다' 로 오해하지 않도록 어디에 담겼는지까지 밝힌다 — 서버에는 아직 아무것도 안 갔다.
+            <p className="text-xs text-ink-400">
+              작성 중인 내용을 {hhmm(draftSavedAt)}에 이 브라우저에 임시로 담아 두었습니다.
+            </p>
+          )}
+        </div>
+
+        <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
+          {issueCount > 0 ? (
+            <span className="text-xs text-signal-red sm:mr-1 sm:text-right">
+              고쳐야 할 곳 <span className="krw">{issueCount}</span>군데 — 화면 위쪽에 목록이 있습니다.
+            </span>
+          ) : hiddenFromCustomers ? (
+            <span className="text-xs text-signal-amber sm:mr-1 sm:text-right">
+              지금 상태로는 고객 화면에 보이지 않습니다.
+            </span>
+          ) : (
+            dirty && (
+              <span className="text-xs text-ink-400 sm:mr-1 sm:text-right">
+                저장하지 않은 변경이 있습니다.
+              </span>
+            )
+          )}
+          {/* 모바일에서 두 버튼이 같은 폭으로 나란히 서도록 — 한 줄에 몰아 두면 아바타에 눌린다 */}
+          <div className="flex items-center gap-2">
+            <Link href="/admin/products" className={`${BTN_GHOST} flex-1 text-center sm:flex-none`}>
+              취소
+            </Link>
             <button
               type="button"
-              onClick={onDelete}
-              disabled={hasOrders || saving}
-              className="text-sm text-ink-400 transition-colors hover:text-signal-red disabled:cursor-not-allowed disabled:opacity-50"
+              onClick={onSave}
+              disabled={saving}
+              className={`${BTN_PRIMARY} flex-1 sm:flex-none`}
             >
-              상품 삭제
+              {saving ? "저장 중…" : isNew ? "상품 등록" : "변경 사항 저장"}
             </button>
-            {hasOrders && (
-              <Help>주문 이력이 있어 삭제할 수 없습니다. 상태를 숨김으로 변경해 주세요.</Help>
-            )}
-          </>
-        )}
-        {draftSavedAt !== null && (
-          // '저장했다' 로 오해하지 않도록 어디에 담겼는지까지 밝힌다 — 서버에는 아직 아무것도 안 갔다.
-          <p className="text-xs text-ink-400">
-            작성 중인 내용을 {hhmm(draftSavedAt)}에 이 브라우저에 임시로 담아 두었습니다.
-          </p>
-        )}
-      </div>
-
-      <div className="flex flex-col items-stretch gap-2 sm:flex-row sm:items-center">
-        {issueCount > 0 ? (
-          <span className="text-xs text-signal-red sm:mr-1 sm:text-right">
-            고쳐야 할 곳 <span className="krw">{issueCount}</span>군데 — 화면 위쪽에 목록이 있습니다.
-          </span>
-        ) : hiddenFromCustomers ? (
-          <span className="text-xs text-signal-amber sm:mr-1 sm:text-right">
-            지금 상태로는 고객 화면에 보이지 않습니다.
-          </span>
-        ) : (
-          dirty && (
-            <span className="text-xs text-ink-400 sm:mr-1 sm:text-right">
-              저장하지 않은 변경이 있습니다.
-            </span>
-          )
-        )}
-        {/* 모바일에서 두 버튼이 같은 폭으로 나란히 서도록 — 한 줄에 몰아 두면 아바타에 눌린다 */}
-        <div className="flex items-center gap-2">
-          <Link href="/admin/products" className={`${BTN_GHOST} flex-1 text-center sm:flex-none`}>
-            취소
-          </Link>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving}
-            className={`${BTN_PRIMARY} flex-1 sm:flex-none`}
-          >
-            {saving ? "저장 중…" : isNew ? "상품 등록" : "변경 사항 저장"}
-          </button>
+          </div>
         </div>
       </div>
     </div>

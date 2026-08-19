@@ -124,27 +124,37 @@ export default function ProductsClient() {
       if (action.kind === "price") setPriceError(text);
       else setNotice({ tone: "warn", text });
     };
+    /* 삭제만 라우트가 다르다 — bulk-edit 은 "값을 바꾼다" 는 전제의 검증을 통과해야 하는데
+       삭제에는 통과시킬 값이 없다(api/admin/products/bulk-delete/route.ts 머리말 참고). */
+    const isDelete = action.kind === "delete";
     try {
-      const res = await fetch("/api/admin/products/bulk-edit", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids, action }),
-      });
+      const res = await fetch(
+        isDelete ? "/api/admin/products/bulk-delete" : "/api/admin/products/bulk-edit",
+        {
+          method: isDelete ? "POST" : "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(isDelete ? { ids } : { ids, action }),
+        }
+      );
       const body = (await res.json().catch(() => null)) as
         (BulkEditResult & { error?: string }) | null;
       if (!res.ok || !body) {
-        failWith(body?.error ?? "일괄 변경에 실패했습니다.");
+        failWith(body?.error ?? (isDelete ? "삭제하지 못했습니다." : "일괄 변경에 실패했습니다."));
         return false;
       }
       setPriceError(null);
       setNotice({
         tone: body.failed.length > 0 ? "warn" : "ok",
-        text: summarizeBulkResult(headline, body),
+        text: summarizeBulkResult(headline, body, isDelete ? "삭제했습니다" : undefined),
       });
       list.reload();
       return true;
     } catch {
-      failWith("연결이 끊겨 일괄 변경을 마치지 못했습니다.");
+      failWith(
+        isDelete
+          ? "연결이 끊겨 삭제를 마치지 못했습니다. 목록을 새로고침해 무엇이 지워졌는지 확인해 주세요."
+          : "연결이 끊겨 일괄 변경을 마치지 못했습니다."
+      );
       return false;
     } finally {
       setBulkBusy(false);
@@ -215,6 +225,7 @@ export default function ProductsClient() {
             setPriceError(null);
             setPriceModalOpen(true);
           }}
+          onDelete={() => requestBulk({ kind: "delete" })}
           onDropZeroPrice={() =>
             list.deselectIds(list.selectedRows.filter((r) => r.price <= 0).map((r) => r.id))
           }
@@ -324,7 +335,10 @@ export default function ProductsClient() {
         title={pendingBulk?.copy.title ?? ""}
         description={pendingBulk?.copy.description ?? ""}
         confirmLabel={pendingBulk?.copy.confirmLabel ?? "확인"}
-        danger={pendingBulk?.action.kind === "status" && pendingBulk.action.value === "active"}
+        danger={
+          pendingBulk?.action.kind === "delete" ||
+          (pendingBulk?.action.kind === "status" && pendingBulk.action.value === "active")
+        }
       />
     </div>
   );

@@ -27,8 +27,16 @@ export function josaRo(word: string): string {
   return jong === 0 || jong === 8 ? "로" : "으로";
 }
 
-export function summarizeBulkResult(headline: string, result: BulkEditResult): string {
-  const parts = [`${headline} — 상품 ${result.ok}개를 바꿨습니다.`];
+/**
+ * @param verb 결과 첫 문장의 서술어. 삭제는 "바꿨습니다" 가 아니라 "삭제했습니다" 여야 한다 —
+ *             27개를 지워 놓고 "바꿨습니다" 라고 적으면 무슨 일이 일어난 건지 알 수 없다.
+ */
+export function summarizeBulkResult(
+  headline: string,
+  result: BulkEditResult,
+  verb = "바꿨습니다"
+): string {
+  const parts = [`${headline} — 상품 ${result.ok}개를 ${verb}.`];
 
   if (result.changes.length > 0) {
     const sample = result.changes
@@ -39,7 +47,16 @@ export function summarizeBulkResult(headline: string, result: BulkEditResult): s
     parts.push(`예: ${sample}${more}.`);
   }
   if (result.skipped.length > 0) {
-    parts.push(`${result.skipped.length}개는 바뀔 값이 없어 건너뛰었습니다.`);
+    /* 이유별로 묶어 센다.
+       예전에는 "N개는 바뀔 값이 없어 건너뛰었습니다" 한 문장으로 뭉쳐 놨는데, 그 문구는
+       가격 조정에서만 맞다 — 삭제에서 건너뛰는 이유는 '이미 지워져 있었다' 이고, 가격
+       조정 안에서도 '기준값이 비어 있다' 와 '바뀌는 값이 없다' 는 관리자가 해야 할 일이
+       서로 다르다. 서버가 준 이유를 그대로 살려 세어 준다. */
+    const byReason = new Map<string, number>();
+    for (const item of result.skipped) {
+      byReason.set(item.reason, (byReason.get(item.reason) ?? 0) + 1);
+    }
+    parts.push([...byReason].map(([reason, n]) => `${n}개는 ${reason}`).join(" "));
   }
   if (result.failed.length > 0) {
     const sample = result.failed

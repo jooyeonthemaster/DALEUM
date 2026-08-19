@@ -8,6 +8,16 @@ export interface ConfirmDialogProps {
   onClose: () => void;
   /** Promise 반환 시 완료까지 버튼이 잠기고, 성공하면 자동으로 닫힌다 */
   onConfirm: () => void | Promise<void>;
+  /**
+   * 확인 뒤 스스로 닫을지 (기본 true).
+   *
+   * false 로 두어야 하는 자리가 있다 — **확인이 다음 단계를 여는** 경우다.
+   * 상품 삭제 1단계가 그랬다: onConfirm 이 단계를 2로 올리면 곧바로 onClose 가 0으로
+   * 되돌려, 2단계 확인창이 뜨자마자 사라지고 삭제 요청은 영영 나가지 않았다
+   * (관리자 화면에서 상품이 삭제되지 않던 원인). 대화상자의 열림을 호출부가
+   * 직접 쥐고 있는 자리에서는 여기서 닫지 않는다.
+   */
+  closeOnConfirm?: boolean;
   title: string;
   description: string;
   confirmLabel?: string;
@@ -24,6 +34,7 @@ export default function ConfirmDialog({
   description,
   confirmLabel = "확인",
   danger = false,
+  closeOnConfirm = true,
 }: ConfirmDialogProps) {
   const [busy, setBusy] = useState(false);
 
@@ -32,7 +43,7 @@ export default function ConfirmDialog({
     setBusy(true);
     try {
       await onConfirm();
-      onClose();
+      if (closeOnConfirm) onClose();
     } finally {
       setBusy(false);
     }

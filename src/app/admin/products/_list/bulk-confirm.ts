@@ -78,6 +78,23 @@ export function buildBulkConfirm(
     };
   }
 
+  if (action.kind === "delete") {
+    /* 삭제만은 "무엇이 함께 사라지는가" 와 "무엇은 안 지워지는가" 를 둘 다 적는다.
+       상품만 지워지는 줄 알고 눌렀다가 사진·옵션·재고 이력까지 잃는 일이 없어야 하고,
+       주문 이력이 있어 남는 상품을 미리 말해 두지 않으면 결과 안내의 '실패 2개' 가
+       버그처럼 읽힌다. */
+    return {
+      title: `상품 ${count}개를 영구 삭제합니다`,
+      description: `${names}
+
+이 ${count}개를 지웁니다. 사진 · 옵션 · 재고 이력이 함께 사라지고 되돌릴 수 없습니다.
+주문 이력이 있는 상품은 지워지지 않고 그대로 남습니다 — 스토어에서 내리려면 삭제 대신 상태를 '숨김' 으로 바꿔 주세요.
+계속할까요?`,
+      confirmLabel: `${count}개 영구 삭제`,
+      headline: "선택 삭제",
+    };
+  }
+
   if (action.kind === "featured") {
     return {
       title: action.value

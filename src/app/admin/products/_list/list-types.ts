@@ -100,9 +100,17 @@ export type BulkAction =
   | { kind: "status"; value: ProductStatus }
   | { kind: "category"; value: string | null }
   | { kind: "featured"; value: boolean }
-  | { kind: "price"; plan: PriceAdjustPlan };
+  | { kind: "price"; plan: PriceAdjustPlan }
+  /**
+   * 선택 삭제. 값이 없는 유일한 작업이라 서버도 다른 라우트(bulk-delete)가 받는다 —
+   * 나머지 넷은 "값을 바꾼다" 는 전제의 검증을 통과해야 하지만 삭제에는 그 값이 없다.
+   */
+  | { kind: "delete" };
 
-/** 일괄 편집 결과 — 서버가 성공/실패를 행 단위로 정직하게 돌려준다 */
+/**
+ * 일괄 작업 결과 — 서버가 성공/실패를 행 단위로 정직하게 돌려준다.
+ * 삭제도 같은 모양을 쓴다(changes 는 비어 있고, failed 에 '주문 이력이 있어 …' 가 담긴다).
+ */
 export interface BulkEditResult {
   ok: number;
   failed: { id: string; name: string; reason: string }[];

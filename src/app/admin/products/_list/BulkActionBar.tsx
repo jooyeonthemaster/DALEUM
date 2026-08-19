@@ -12,7 +12,7 @@
    무엇이 몇 개 선택됐는지와 실행 버튼이 늘 보여야 하기 때문이다.
    ============================================================ */
 
-import { Star, StarOff, Tag, X } from "lucide-react";
+import { Star, StarOff, Tag, Trash2, X } from "lucide-react";
 import { Select } from "@/components/admin/Field";
 import type { Category, ProductStatus } from "@/lib/types";
 import { BTN_GHOST, PRODUCT_STATUS_OPTIONS } from "../product-ui";
@@ -38,6 +38,8 @@ export interface BulkActionBarProps {
   onCategory: (categoryId: string | null) => void;
   onFeatured: (value: boolean) => void;
   onPriceAdjust: () => void;
+  /** 고른 상품 영구 삭제 — 확인창은 호출부(ProductsClient)가 띄운다 */
+  onDelete: () => void;
   /** 판매가가 없는 상품만 선택에서 빼기 — 나머지를 그대로 '판매중' 으로 올리기 위한 통로 */
   onDropZeroPrice: () => void;
   onClear: () => void;
@@ -52,6 +54,7 @@ export default function BulkActionBar({
   onCategory,
   onFeatured,
   onPriceAdjust,
+  onDelete,
   onDropZeroPrice,
   onClear,
 }: BulkActionBarProps) {
@@ -133,11 +136,25 @@ export default function BulkActionBar({
           추천 해제
         </button>
 
+        {/* 되돌릴 수 없는 유일한 작업이라 다른 것들과 붙여 두지 않는다 —
+            ml-auto 로 오른쪽 무리에 떼어 놓고, 채운 빨강 대신 테두리 빨강을 쓴다.
+            채워 버리면 이 줄에서 가장 눈에 띄는 버튼이 '삭제' 가 되어, 카테고리를
+            옮기러 온 사람의 손이 먼저 가는 자리에 놓인다. */}
+        <button
+          type="button"
+          onClick={onDelete}
+          disabled={busy}
+          className="ml-auto inline-flex items-center gap-1.5 border border-signal-red/40 px-3 py-2 text-[13px] text-signal-red transition-colors hover:bg-signal-red hover:text-cream-50 disabled:opacity-50"
+        >
+          <Trash2 size={14} strokeWidth={1.5} />
+          선택 삭제
+        </button>
+
         <button
           type="button"
           onClick={onClear}
           disabled={busy}
-          className="ml-auto inline-flex items-center gap-1 px-2 py-2 text-[13px] text-ink-500 transition-colors hover:text-ink-900 disabled:opacity-50"
+          className="inline-flex items-center gap-1 px-2 py-2 text-[13px] text-ink-500 transition-colors hover:text-ink-900 disabled:opacity-50"
         >
           <X size={14} strokeWidth={1.5} />
           선택 해제
