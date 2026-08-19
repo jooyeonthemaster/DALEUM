@@ -8,6 +8,7 @@ import Pagination from "@/components/admin/Pagination";
 import { FieldRow, Input, Select } from "@/components/admin/Field";
 import { formatDate, formatPhone } from "@/lib/format";
 import CustomerSearch from "./CustomerSearch";
+import NextStepCard from "./NextStepCard";
 import {
   api,
   BTN_GHOST,
@@ -20,7 +21,23 @@ import {
 
 /* ============================================================
    [멤버] 탭 — vip_members: 고객 검색 → 그룹 배정, 메모, 해제
+
+   왜 그룹을 위에서 받아 오나:
+   예전에는 이 탭이 그룹을 따로 읽었고, 그룹이 하나도 없어도 '멤버 추가'가
+   그대로 열렸다. 고객까지 골라 저장을 누르면 그제서야 '배정할 그룹을
+   선택해 주세요.' 라고만 뜨고, 그룹을 만들 방법도 안내도 없어 길이 끊겼다.
+   이제 그룹이 없으면 추가 버튼을 잠그고 그룹 탭으로 보낸다.
    ============================================================ */
+
+export interface MembersTabProps {
+  groups: GroupRow[];
+  /** 그룹을 아직 읽는 중이면 true — 읽기 전에 '그룹이 없다'고 단정하면 안내가 깜빡인다 */
+  groupsLoading: boolean;
+  /** 그룹이 없을 때 그룹 탭으로 보내는 통로 */
+  onGoToGroups: () => void;
+  /** 멤버 수가 바뀌면 상단 진행 안내를 다시 계산하게 한다 */
+  onChanged: () => void | Promise<void>;
+}
 
 const PAGE_SIZE = 20;
 
@@ -31,9 +48,8 @@ interface MemberDraft {
   note: string;
 }
 
-export default function MembersTab() {
+export default function MembersTab({ groups, groupsLoading, onGoToGroups, onChanged }: MembersTabProps) {
   const [members, setMembers] = useState<MemberRow[] | null>(null);
-  const [groups, setGroups] = useState<GroupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [groupFilter, setGroupFilter] = useState("");
   const [page, setPage] = useState(1);
@@ -60,11 +76,11 @@ export default function MembersTab() {
     return () => clearTimeout(timer);
   }, [groupFilter, load]);
 
-  useEffect(() => {
-    api<{ groups: GroupRow[] }>("/api/admin/vip/groups")
-      .then((data) => setGroups(data.groups))
-      .catch(() => setGroups([]));
-  }, []);
+  const hasGroup = groups.length > 0;
+  // 그룹이 없거나 배정된 멤버가 없으면 표 대신 '다음에 할 일' 카드를 보여 준다
+  // 그룹을 아직 읽는 중일 때는 아무 단정도 하지 않는다(안내가 깜빡이는 것을 막는다)
+  const showEmptyState =
+    !groupsLoading && (!hasGroup || (members !== null && members.length === 0));
 
   const totalPages = Math.max(1, Math.ceil((members?.length ?? 0) / PAGE_SIZE));
   const pageRows = useMemo(
@@ -120,6 +136,7 @@ export default function MembersTab() {
       }
       setDraft(null);
       await load(groupFilter);
+      await onChanged();
     } catch (e) {
       setDraftError(e instanceof Error ? e.message : "저장에 실패했습니다.");
     } finally {
@@ -147,13 +164,31 @@ export default function MembersTab() {
             </option>
           ))}
         </Select>
-        <button type="button" onClick={openCreate} className={`shrink-0 ${BTN_PRIMARY}`}>
+        <button
+          type="button"
+          onClick={openCreate}
+          disabled={!hasGroup}
+          title={hasGroup ? undefined : "먼저 VIP 그룹을 만들어야 합니다"}
+          className={`shrink-0 ${BTN_PRIMARY}`}
+        >
           멤버 추가
         </button>
       </div>
 
       {error && <p className="mb-4 text-sm text-signal-red">{error}</p>}
 
+      {showEmptyState ? (
+        <NextStepCard
+          title={hasGroup ? "아직 배정된 VIP 멤버가 없습니다." : "먼저 VIP 그룹을 만들어야 합니다."}
+          description={
+            hasGroup
+              ? "가입한 고객을 그룹에 배정하면 그 그룹의 할인율과 전용 가격이 바로 적용됩니다."
+              : "멤버는 그룹에 배정하는 것이라, 그룹이 하나도 없으면 배정할 곳이 없습니다. 그룹을 먼저 만들어 주세요."
+          }
+          actionLabel={hasGroup ? "멤버 추가" : "그룹 만들러 가기"}
+          onAction={hasGroup ? openCreate : onGoToGroups}
+        />
+      ) : (
       <DataTable<MemberRow>
         columns={[
           {
@@ -233,6 +268,7 @@ export default function MembersTab() {
         emptyMessage="아직 배정된 VIP 멤버가 없습니다."
         pagination={<Pagination page={page} totalPages={totalPages} onChange={setPage} />}
       />
+      )}
 
       {/* 추가/수정 모달 */}
       <Modal
@@ -267,7 +303,12 @@ export default function MembersTab() {
                 />
               )}
             </FieldRow>
-            <FieldRow label="그룹" required htmlFor="member-group">
+            <FieldRow
+              label="배정할 그룹"
+              required
+              htmlFor="member-group"
+              help="그룹에 걸린 할인율이 이 고객에게 그대로 적용됩니다."
+            >
               <Select
                 id="member-group"
                 value={draft.groupId}
@@ -277,7 +318,7 @@ export default function MembersTab() {
                 {groups.map((g) => (
                   <option key={g.id} value={g.id}>
                     {g.name}
-                    {g.discount_rate > 0 ? ` (${g.discount_rate}%)` : ""}
+                    {g.discount_rate > 0 ? ` — 전체 ${g.discount_rate}% 할인` : " — 전체 할인 없음"}
                   </option>
                 ))}
               </Select>
@@ -304,6 +345,7 @@ export default function MembersTab() {
           if (!removing) return;
           await api(`/api/admin/vip/members/${removing.id}`, { method: "DELETE" });
           await load(groupFilter);
+          await onChanged();
         }}
         title="멤버십 해제"
         description={`${customerLabel(removing?.profiles)} 고객의 VIP 멤버십을 해제합니다. 그룹 할인과 전용 가격이 더 이상 적용되지 않습니다.`}

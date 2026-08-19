@@ -4,9 +4,12 @@ import { useState } from "react";
 import { X } from "lucide-react";
 import Modal from "@/components/admin/Modal";
 import { FieldRow, Input, Select, Toggle } from "@/components/admin/Field";
-import { discountRate, krw } from "@/lib/format";
+import { TOGGLE_LABELS, VIP_BASE_PRICE_LABEL, won } from "@/lib/admin-labels";
+import { discountRate } from "@/lib/format";
 import CustomerSearch from "./CustomerSearch";
-import ProductSearch from "./ProductSearch";
+import KoreanDateField from "./KoreanDateField";
+import ProductPickerModal from "./ProductPickerModal";
+import { BasePriceLine, isBelowCost, MarginLine } from "./PriceMeta";
 import {
   api,
   BTN_GHOST,
@@ -20,9 +23,15 @@ import {
 } from "./vipApi";
 
 /* ============================================================
-   상품별 VIP 가격 — 일괄 등록 모달
-   대상(그룹/개별 고객) 선택 → 상품 검색 멀티 선택 →
-   상품별 지정가/할인율 개별 조정 테이블 → 기간/활성
+   상품별 VIP 가격 — 여러 상품을 한 번에 등록하는 모달.
+
+   고친 것:
+   · 상품 담기가 1건씩 검색·타이핑뿐이었다 → 여러 개를 한 번에 고르는 모달로.
+   · 기준 금액을 "정가"라고 불렀다 → 상품 폼의 정가(할인 전 표시가)와 뒤섞이므로
+     VIP 화면에서는 '기본 판매가'로 부른다.
+   · 원가가 보이지 않아 원가 이하로 팔아도 아무도 못 막았다 → 원가·마진을 같이 보여 주고,
+     원가 아래면 한 번 더 확인을 받는다.
+   · 기간 입력이 mm/dd/yyyy 로 떴다 → 한국식 달력으로.
    ============================================================ */
 
 interface DraftRow {
@@ -43,10 +52,12 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
   const [groupId, setGroupId] = useState("");
   const [customer, setCustomer] = useState<CustomerHit | null>(null);
   const [rows, setRows] = useState<DraftRow[]>([]);
+  const [picking, setPicking] = useState(false);
   const [startsAt, setStartsAt] = useState("");
   const [endsAt, setEndsAt] = useState("");
   const [active, setActive] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [costWarning, setCostWarning] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
 
   function reset() {
@@ -58,6 +69,7 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
     setEndsAt("");
     setActive(true);
     setError(null);
+    setCostWarning(null);
   }
 
   function close() {
@@ -66,6 +78,7 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
   }
 
   function updateRow(index: number, patch: Partial<DraftRow>) {
+    setCostWarning(null);
     setRows((prev) => prev.map((row, i) => (i === index ? { ...row, ...patch } : row)));
   }
 
@@ -81,29 +94,39 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
 
   async function save() {
     if (targetType === "group" && !groupId) {
-      setError("적용할 그룹을 선택해 주세요.");
+      setError("어느 그룹에 적용할지 골라 주세요.");
       return;
     }
     if (targetType === "user" && !customer) {
-      setError("적용할 고객을 검색해 선택해 주세요.");
+      setError("어느 고객에게 적용할지 검색해 골라 주세요.");
       return;
     }
     if (rows.length === 0) {
-      setError("가격을 지정할 상품을 1개 이상 추가해 주세요.");
+      setError("가격을 정할 상품을 1개 이상 담아 주세요.");
       return;
     }
     for (const row of rows) {
       if (appliedPreview(row) === null) {
         setError(
           row.mode === "price"
-            ? `'${row.product.name}'의 지정가를 확인해 주세요. (1원 이상, 정가 ${krw(row.product.price)}원 이하의 정수)`
+            ? `'${row.product.name}'의 가격을 확인해 주세요. (1원 이상, ${VIP_BASE_PRICE_LABEL} ${won(row.product.price)} 이하)`
             : `'${row.product.name}'의 할인율을 확인해 주세요. (0 초과 100 이하)`
         );
         return;
       }
     }
     if (startsAt && endsAt && startsAt > endsAt) {
-      setError("적용 종료일은 시작일 이후여야 합니다.");
+      setError("적용 종료일은 시작일보다 뒤여야 합니다.");
+      return;
+    }
+
+    // 원가 이하로 파는 것은 막지 않되, 모르고 지나치지는 않게 한 번 더 묻는다
+    const belowCost = rows.filter((row) => isBelowCost(appliedPreview(row), row.product.cost_price));
+    if (belowCost.length > 0 && !costWarning) {
+      setError(null);
+      setCostWarning(
+        `${belowCost.map((r) => `'${r.product.name}'`).join(", ")} 의 가격이 원가보다 낮습니다. 이대로 등록하면 팔수록 손해입니다. 그래도 등록하시겠습니까?`
+      );
       return;
     }
 
@@ -128,7 +151,7 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
       reset();
       onSaved();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "전용 가격 등록에 실패했습니다.");
+      setError(e instanceof Error ? e.message : "전용 가격을 등록하지 못했습니다.");
     } finally {
       setSaving(false);
     }
@@ -146,7 +169,13 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
             취소
           </button>
           <button type="button" onClick={save} disabled={saving} className={BTN_PRIMARY}>
-            {saving ? "등록 중…" : rows.length > 0 ? `${rows.length}개 상품 등록` : "등록"}
+            {saving
+              ? "등록 중…"
+              : costWarning
+                ? "그래도 등록"
+                : rows.length > 0
+                  ? `${rows.length}개 상품 등록`
+                  : "등록"}
           </button>
         </>
       }
@@ -157,11 +186,14 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
           <div className="flex gap-4 pb-3">
             {(
               [
-                { key: "group", label: "그룹" },
-                { key: "user", label: "개별 고객" },
+                { key: "group", label: "그룹 전체" },
+                { key: "user", label: "고객 한 명" },
               ] as const
             ).map((option) => (
-              <label key={option.key} className="flex cursor-pointer items-center gap-1.5 text-sm text-ink-700">
+              <label
+                key={option.key}
+                className="flex cursor-pointer items-center gap-1.5 text-sm text-ink-700"
+              >
                 <input
                   type="radio"
                   name="price-target"
@@ -187,31 +219,41 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
           )}
         </FieldRow>
 
-        {/* 상품 선택 + 가격 테이블 */}
+        {/* 상품 담기 + 가격 표 */}
         <FieldRow
           label="상품별 가격"
           required
-          help="상품마다 지정가 또는 할인율을 개별로 조정할 수 있습니다. 지정가는 정가를 넘을 수 없습니다."
+          help={`상품마다 가격을 직접 정하거나 할인율로 정할 수 있습니다. ${VIP_BASE_PRICE_LABEL}보다 비싸게는 정할 수 없습니다.`}
         >
-          <ProductSearch onAdd={(p) => setRows((prev) => [...prev, { product: p, mode: "price", value: "" }])} excludeIds={rows.map((r) => r.product.id)} />
+          <button type="button" onClick={() => setPicking(true)} className={BTN_GHOST}>
+            상품 담기
+          </button>
           {rows.length > 0 && (
             <ul className="mt-3 divide-y divide-ink-100 border border-ink-200">
               {rows.map((row, i) => {
                 const preview = appliedPreview(row);
+                const below = isBelowCost(preview, row.product.cost_price);
                 return (
-                  <li key={row.product.id} className="flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5">
+                  <li
+                    key={row.product.id}
+                    className={`flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 ${
+                      below ? "bg-[#f6e8e3]" : ""
+                    }`}
+                  >
                     <div className="min-w-0 flex-1 basis-40">
                       <p className="truncate text-sm text-ink-900">{row.product.name}</p>
-                      <p className="krw text-xs text-ink-400">정가 {krw(row.product.price)}원</p>
+                      <BasePriceLine price={row.product.price} cost={row.product.cost_price} />
                     </div>
                     <Select
                       value={row.mode}
-                      onChange={(e) => updateRow(i, { mode: e.target.value as DraftRow["mode"], value: "" })}
-                      className="w-28 shrink-0"
-                      aria-label="가격 방식"
+                      onChange={(e) =>
+                        updateRow(i, { mode: e.target.value as DraftRow["mode"], value: "" })
+                      }
+                      className="w-32 shrink-0"
+                      aria-label="가격 정하는 방식"
                     >
-                      <option value="price">지정가</option>
-                      <option value="rate">할인율</option>
+                      <option value="price">가격 직접</option>
+                      <option value="rate">할인율로</option>
                     </Select>
                     <div className="relative w-32 shrink-0">
                       <Input
@@ -221,30 +263,33 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
                         step={row.mode === "price" ? 10 : 0.5}
                         value={row.value}
                         onChange={(e) => updateRow(i, { value: e.target.value })}
-                        placeholder={row.mode === "price" ? "지정가" : "할인율"}
-                        aria-label={row.mode === "price" ? "지정가" : "할인율"}
+                        placeholder={row.mode === "price" ? "판매할 가격" : "할인율"}
+                        aria-label={row.mode === "price" ? "적용할 가격" : "할인율"}
                         className="krw pr-9"
                       />
                       <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">
                         {row.mode === "price" ? "원" : "%"}
                       </span>
                     </div>
-                    <p className="krw w-32 shrink-0 text-right text-sm">
+                    <div className="w-40 shrink-0 text-right">
                       {preview !== null ? (
                         <>
-                          <span className="font-semibold text-forest-700">{krw(preview)}원</span>
-                          <span className="ml-1 text-xs text-ink-400">
-                            ({discountRate(row.product.price, preview)}%)
-                          </span>
+                          <p className="krw text-sm">
+                            <span className="font-semibold text-forest-700">{won(preview)}</span>
+                            <span className="ml-1 text-xs text-ink-400">
+                              ({discountRate(row.product.price, preview)}% 할인)
+                            </span>
+                          </p>
+                          <MarginLine applied={preview} cost={row.product.cost_price} />
                         </>
                       ) : (
                         <span className="text-ink-300">—</span>
                       )}
-                    </p>
+                    </div>
                     <button
                       type="button"
                       onClick={() => setRows((prev) => prev.filter((_, idx) => idx !== i))}
-                      aria-label="상품 제거"
+                      aria-label="상품 빼기"
                       className="shrink-0 p-1 text-ink-400 transition-colors hover:text-signal-red"
                     >
                       <X size={16} strokeWidth={1.5} />
@@ -257,35 +302,51 @@ export default function PriceCreateModal({ open, onClose, onSaved, groups }: Pri
         </FieldRow>
 
         {/* 기간 */}
-        <FieldRow label="적용 기간" help="비워두면 상시 적용됩니다. 종료일 자정까지 유효합니다.">
-          <div className="flex items-center gap-2">
-            <Input
-              type="date"
+        <FieldRow label="적용 기간" help="비워 두면 계속 적용됩니다. 종료일은 그 날 밤 12시까지입니다.">
+          <div className="flex flex-wrap items-start gap-2">
+            <KoreanDateField
               value={startsAt}
-              onChange={(e) => setStartsAt(e.target.value)}
+              onChange={setStartsAt}
+              emptyLabel="바로 시작"
               max={endsAt || undefined}
-              aria-label="적용 시작일"
-              className="max-w-44"
+              ariaLabel="적용 시작일"
             />
-            <span className="text-ink-400">~</span>
-            <Input
-              type="date"
+            <span className="pt-2.5 text-ink-400">~</span>
+            <KoreanDateField
               value={endsAt}
-              onChange={(e) => setEndsAt(e.target.value)}
+              onChange={setEndsAt}
+              emptyLabel="종료 없음"
               min={startsAt || undefined}
-              aria-label="적용 종료일"
-              className="max-w-44"
+              ariaLabel="적용 종료일"
             />
           </div>
         </FieldRow>
 
-        {/* 활성 */}
-        <FieldRow label="활성 상태">
-          <Toggle checked={active} onChange={setActive} label={active ? "활성" : "비활성"} />
+        {/* 노출 */}
+        <FieldRow label="지금 적용" help="끄면 저장만 해 두고 나중에 켤 수 있습니다.">
+          <Toggle
+            checked={active}
+            onChange={setActive}
+            label={active ? TOGGLE_LABELS.on : TOGGLE_LABELS.off}
+          />
         </FieldRow>
 
+        {costWarning && (
+          <p className="border border-signal-red/30 bg-[#f6e8e3] px-4 py-2.5 text-sm leading-relaxed text-signal-red">
+            {costWarning}
+          </p>
+        )}
         {error && <p className="pt-3 text-sm text-signal-red">{error}</p>}
       </div>
+
+      <ProductPickerModal
+        open={picking}
+        onClose={() => setPicking(false)}
+        excludeIds={rows.map((r) => r.product.id)}
+        onAdd={(products) =>
+          setRows((prev) => [...prev, ...products.map((p) => ({ product: p, mode: "price" as const, value: "" }))])
+        }
+      />
     </Modal>
   );
 }

@@ -1,5 +1,5 @@
 import Image from "next/image";
-import { parseStory, type StoryBlockNode } from "./StoryBlock";
+import { parseStory, renderInline, type StoryBlockNode } from "./StoryBlock";
 
 export interface DescriptionBlockProps {
   text: string;
@@ -117,7 +117,7 @@ export default function DescriptionBlock({
         if (block.type === "heading") {
           return (
             <p key={i} className="text-sm font-medium text-ink-800">
-              {block.text}
+              {renderInline(block.text)}
             </p>
           );
         }
@@ -129,7 +129,7 @@ export default function DescriptionBlock({
                   key={j}
                   className="relative pl-5 text-[13px] leading-[1.8] text-ink-500 before:absolute before:left-0 before:text-ink-300 before:content-['—']"
                 >
-                  {item}
+                  {renderInline(item)}
                 </li>
               ))}
             </ul>
@@ -158,7 +158,7 @@ export default function DescriptionBlock({
             {block.lines.map((line, j) => (
               <span key={j}>
                 {j > 0 && <br />}
-                {line}
+                {renderInline(line)}
               </span>
             ))}
           </p>

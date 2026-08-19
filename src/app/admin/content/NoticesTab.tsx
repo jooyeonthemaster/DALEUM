@@ -5,9 +5,14 @@ import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import Modal from "@/components/admin/Modal";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import { FieldRow, Input, Textarea, Toggle, Help } from "@/components/admin/Field";
+// 고객이 보게 될 모습을 그대로 보여 주려고 고객 화면 컴포넌트를 읽기 전용으로 가져다 쓴다.
+// (고객 화면 코드는 손대지 않는다 — 미리보기가 실물과 갈라지면 미리보기의 뜻이 없다)
+import Accordion, { type AccordionItem } from "@/components/about/Accordion";
 import { formatDate } from "@/lib/format";
+import { TOGGLE_LABELS } from "@/lib/admin-labels";
 import type { Notice } from "@/lib/types";
-import { EditModalFooter, requestJson } from "./shared";
+import { EditModalFooter, requestJson, StorefrontLink } from "./shared";
+import EmptyHint from "./_components/EmptyHint";
 
 interface NoticeForm {
   title: string;
@@ -23,6 +28,16 @@ const EMPTY_FORM: NoticeForm = {
   is_active: true,
 };
 
+/**
+ * 공지 관리.
+ *
+ * 고객 화면(src/app/(shop)/support/page.tsx:205-211)은 공지를 고객센터 아코디언
+ * 안에 **접힌 채로** 넣고, 본문은 whitespace-pre-line 평문으로 그린다.
+ * 즉 굵게·목록·링크 같은 서식은 애초에 지원되지 않는다 — 마크다운 기호를 쓰면
+ * 그 기호가 그대로 고객에게 보인다(상세페이지에서 났던 사고와 같은 종류다).
+ * 그래서 서식 도구를 붙이는 대신, 실제로 지원되는 것(줄바꿈)만 알려 주고
+ * 고객이 볼 모습 그대로를 미리보기로 붙였다.
+ */
 export default function NoticesTab() {
   const [rows, setRows] = useState<Notice[]>([]);
   const [loading, setLoading] = useState(true);
@@ -73,6 +88,14 @@ export default function NoticesTab() {
   }
 
   async function save() {
+    if (!form.title.trim()) {
+      setFormError("제목을 입력해 주세요.");
+      return;
+    }
+    if (!form.content.trim()) {
+      setFormError("내용을 입력해 주세요.");
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
@@ -114,6 +137,21 @@ export default function NoticesTab() {
     await load();
   }
 
+  // 미리보기는 고객 화면과 같은 부품·같은 구조로 만든다 (support/page.tsx 의 noticeItems 와 동일)
+  const previewItems: AccordionItem[] = [
+    {
+      id: "preview",
+      overline: form.is_pinned ? "고정" : "공지",
+      title: form.title || "제목을 입력하면 여기에 보입니다",
+      meta: formatDate(editing?.created_at ?? new Date()),
+      content: (
+        <div className="whitespace-pre-line">
+          {form.content || "내용을 입력하면 여기에 그대로 보입니다."}
+        </div>
+      ),
+    },
+  ];
+
   const columns: DataTableColumn<Notice>[] = [
     {
       key: "title",
@@ -122,7 +160,7 @@ export default function NoticesTab() {
         <span className="flex items-center gap-2">
           {n.is_pinned && (
             <span className="shrink-0 bg-forest-100 px-2 py-0.5 text-[11px] text-forest-800">
-              고정
+              맨 위 고정
             </span>
           )}
           <span className="truncate font-medium text-ink-900">{n.title}</span>
@@ -144,9 +182,9 @@ export default function NoticesTab() {
     },
     {
       key: "is_active",
-      label: "활성",
+      label: TOGGLE_LABELS.switch,
       align: "center",
-      width: "80px",
+      width: "90px",
       render: (n) => (
         <span onClick={(e) => e.stopPropagation()}>
           <Toggle checked={n.is_active} onChange={(next) => toggleActive(n, next)} />
@@ -157,24 +195,40 @@ export default function NoticesTab() {
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <p className="text-sm text-ink-400 krw">총 {rows.length}개</p>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
-        >
-          새 공지
-        </button>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-500">
+          공지는 <b className="text-ink-900">고객센터 &gt; 공지사항</b>에 제목만 보이게 접힌 채로
+          쌓입니다. 고객이 제목을 눌러야 내용이 펼쳐집니다.{" "}
+          <StorefrontLink href="/support#notices">고객 화면 보기</StorefrontLink>
+        </p>
+        {rows.length > 0 && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
+          >
+            새 공지 쓰기
+          </button>
+        )}
       </div>
 
-      <DataTable<Notice>
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        emptyMessage="등록된 공지가 없습니다."
-        onRowClick={openEdit}
-      />
+      {!loading && rows.length === 0 ? (
+        <EmptyHint
+          title="아직 올린 공지가 없습니다."
+          description="배송 일정이나 휴무처럼 모든 고객에게 알려야 할 내용을 올립니다. 고객센터 페이지 맨 위에 쌓입니다."
+          actionLabel="첫 공지 쓰기"
+          onAction={openCreate}
+          extra={<StorefrontLink href="/support#notices">지금 고객센터 화면 보기</StorefrontLink>}
+        />
+      ) : (
+        <DataTable<Notice>
+          columns={columns}
+          rows={rows}
+          loading={loading}
+          emptyMessage="등록된 공지가 없습니다."
+          onRowClick={openEdit}
+        />
+      )}
 
       <Modal
         open={modalOpen}
@@ -192,7 +246,12 @@ export default function NoticesTab() {
         }
       >
         <div className="divide-y divide-ink-100">
-          <FieldRow label="제목" required htmlFor="notice-title">
+          <FieldRow
+            label="제목"
+            required
+            htmlFor="notice-title"
+            help="고객센터 목록에는 이 제목만 보입니다. 무슨 내용인지 제목에서 알 수 있게 적어 주세요."
+          >
             <Input
               id="notice-title"
               value={form.title}
@@ -207,22 +266,39 @@ export default function NoticesTab() {
               value={form.content}
               onChange={(e) => setForm({ ...form, content: e.target.value })}
             />
+            <Help>
+              굵게·목록·링크 같은 서식은 고객 화면이 지원하지 않습니다. 별표(*)나 우물정(#) 같은
+              기호를 쓰면 그 기호가 고객에게 그대로 보입니다. 엔터로 줄만 나누어 주세요.
+            </Help>
           </FieldRow>
-          <FieldRow label="상단 고정" help="고정된 공지는 목록 맨 위에 노출됩니다.">
+          <FieldRow
+            label="맨 위 고정"
+            help="켜면 다른 공지보다 위에 놓이고 제목 옆에 '고정' 표시가 붙습니다."
+          >
             <Toggle
               checked={form.is_pinned}
               onChange={(v) => setForm({ ...form, is_pinned: v })}
-              label={form.is_pinned ? "고정됨" : "고정 안 함"}
+              label={form.is_pinned ? "맨 위에 고정" : "고정 안 함"}
             />
           </FieldRow>
-          <FieldRow label="활성">
+          <FieldRow label={TOGGLE_LABELS.switch} help="끄면 고객센터에서 사라집니다.">
             <Toggle
               checked={form.is_active}
               onChange={(v) => setForm({ ...form, is_active: v })}
-              label={form.is_active ? "노출 중" : "숨김"}
+              label={form.is_active ? TOGGLE_LABELS.on : TOGGLE_LABELS.off}
             />
           </FieldRow>
         </div>
+
+        <div className="mt-5 border border-ink-200 bg-cream-50 px-4 py-3">
+          <p className="text-[10px] tracking-[0.18em] text-ink-400">
+            고객센터에서 이렇게 보입니다 (제목을 눌러 펼쳐 보세요)
+          </p>
+          <div className="mt-2">
+            <Accordion items={previewItems} />
+          </div>
+        </div>
+
         {formError && <Help tone="error">{formError}</Help>}
       </Modal>
 

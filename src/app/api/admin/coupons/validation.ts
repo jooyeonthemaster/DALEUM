@@ -1,4 +1,10 @@
-/** 쿠폰 생성/수정 공용 검증 — route.ts와 [id]/route.ts에서 사용 */
+/* 쿠폰 생성/수정 공용 검증 — route.ts와 [id]/route.ts에서 사용.
+
+   거절 문구는 전부 "무엇을 어떻게 고치면 되는지" 로 적는다. 예전 문구는
+   '할인 유형이 올바르지 않습니다' 처럼 개발자 필드명을 그대로 옮긴 것이라,
+   화면에 떠도 대표는 어느 칸을 만져야 하는지 알 수 없었다. */
+
+import { DISCOUNT_TYPE_LABELS } from "@/lib/admin-labels";
 
 export interface CouponPayload {
   code?: unknown;
@@ -37,7 +43,7 @@ export function validateCoupon(
   if (body.code !== undefined) {
     const code = typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
     if (!/^[A-Z0-9_-]{2,30}$/.test(code)) {
-      return { error: "쿠폰 코드는 영문/숫자 2~30자로 입력해 주세요." };
+      return { error: "쿠폰 코드는 영문 대문자·숫자와 -, _ 만 써서 2~30자로 넣어 주세요." };
     }
     out.code = code;
   } else if (!partial) {
@@ -54,42 +60,42 @@ export function validateCoupon(
 
   if (body.discount_type !== undefined || !partial) {
     if (body.discount_type !== "rate" && body.discount_type !== "fixed") {
-      return { error: "할인 유형이 올바르지 않습니다." };
+      return { error: `할인 방식을 ${DISCOUNT_TYPE_LABELS.rate} 또는 ${DISCOUNT_TYPE_LABELS.fixed} 중에서 골라 주세요.` };
     }
     out.discount_type = body.discount_type;
   }
 
   if (body.value !== undefined || !partial) {
     const value = asInt(body.value);
-    if (value === null || value <= 0) return { error: "할인 값을 입력해 주세요." };
+    if (value === null || value <= 0) return { error: "얼마를 깎아 줄지 입력해 주세요." };
     if ((out.discount_type ?? body.discount_type) === "rate" && value > 100) {
-      return { error: "정률 할인은 100%를 넘을 수 없습니다." };
+      return { error: `${DISCOUNT_TYPE_LABELS.rate}은 100%를 넘을 수 없습니다. 금액으로 깎으려면 할인 방식을 ${DISCOUNT_TYPE_LABELS.fixed}으로 바꿔 주세요.` };
     }
     out.value = value;
   }
 
   if (body.min_order !== undefined) {
     const minOrder = asInt(body.min_order) ?? 0;
-    if (minOrder < 0) return { error: "최소 주문금액이 올바르지 않습니다." };
+    if (minOrder < 0) return { error: "최소 주문금액은 0원 이상이어야 합니다." };
     out.min_order = minOrder;
   }
 
   if (body.max_discount !== undefined) {
     const maxDiscount = asInt(body.max_discount);
     if (maxDiscount !== null && maxDiscount <= 0) {
-      return { error: "최대 할인금액이 올바르지 않습니다." };
+      return { error: "최대 할인금액은 1원 이상으로 넣거나 비워 두세요." };
     }
     out.max_discount = maxDiscount;
   }
 
   if (body.starts_at !== undefined) {
     const startsAt = asIso(body.starts_at);
-    if (startsAt === "invalid") return { error: "시작일이 올바르지 않습니다." };
+    if (startsAt === "invalid") return { error: "사용 시작일을 다시 골라 주세요." };
     out.starts_at = startsAt;
   }
   if (body.ends_at !== undefined) {
     const endsAt = asIso(body.ends_at);
-    if (endsAt === "invalid") return { error: "종료일이 올바르지 않습니다." };
+    if (endsAt === "invalid") return { error: "사용 종료일을 다시 골라 주세요." };
     out.ends_at = endsAt;
   }
   if (
@@ -97,18 +103,20 @@ export function validateCoupon(
     typeof out.ends_at === "string" &&
     out.ends_at < out.starts_at
   ) {
-    return { error: "종료일은 시작일 이후여야 합니다." };
+    return { error: "사용 종료일이 시작일보다 빠릅니다. 두 날짜를 다시 확인해 주세요." };
   }
 
   if (body.usage_limit !== undefined) {
     const usageLimit = asInt(body.usage_limit);
-    if (usageLimit !== null && usageLimit < 1) return { error: "총 사용 한도가 올바르지 않습니다." };
+    if (usageLimit !== null && usageLimit < 1) {
+      return { error: "총 사용 가능 횟수는 1회 이상으로 넣거나 비워 두세요." };
+    }
     out.usage_limit = usageLimit;
   }
 
   if (body.per_user_limit !== undefined) {
     const perUser = asInt(body.per_user_limit) ?? 1;
-    if (perUser < 1) return { error: "1인당 사용 한도는 1 이상이어야 합니다." };
+    if (perUser < 1) return { error: "한 사람이 쓸 수 있는 횟수는 1회 이상이어야 합니다." };
     out.per_user_limit = perUser;
   }
 

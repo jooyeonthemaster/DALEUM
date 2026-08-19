@@ -1,58 +1,64 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { ArrowUpRight } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import Tabs from "@/components/admin/Tabs";
-import Modal from "@/components/admin/Modal";
 import SearchInput from "@/components/admin/SearchInput";
-import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import { Label, Select, Textarea } from "@/components/admin/Field";
-import { formatDateTime } from "@/lib/format";
+import { formatDateTime, formatPhone } from "@/lib/format";
+import { BULK_INQUIRY_PURPOSE_LABELS, BULK_INQUIRY_STATUS_LABELS } from "@/lib/constants";
+import type { BulkInquiryStatus } from "@/lib/types";
+import InquiryDetailModal from "./InquiryDetailModal";
 import {
-  BULK_INQUIRY_PURPOSE_LABELS,
-  BULK_INQUIRY_STATUS_LABELS,
-  BULK_INQUIRY_STATUS_TONES,
-} from "@/lib/constants";
-import type { BulkInquiry, BulkInquiryStatus } from "@/lib/types";
+  itemsSummary,
+  STATUS_MEANINGS,
+  STATUS_ORDER,
+  StatusPill,
+  type AdminBulkInquiry,
+} from "./inquiry-ui";
 
-const STATUSES: BulkInquiryStatus[] = ["new", "contacted", "quoted", "closed", "spam"];
+/* ============================================================
+   업소용·OEM 견적 문의함
 
-function StatusPill({ status }: { status: BulkInquiryStatus }) {
-  return (
-    <span
-      className={`inline-flex items-center whitespace-nowrap rounded-full px-2.5 py-1 text-xs font-medium ${BULK_INQUIRY_STATUS_TONES[status]}`}
-    >
-      {BULK_INQUIRY_STATUS_LABELS[status]}
-    </span>
-  );
-}
+   화면 규칙 두 가지가 여기서 지켜져야 한다.
+   1) 관심 품목을 상품 주소(konjac-rice-500g)가 아니라 상품명으로 보여준다 —
+      서버가 이름으로 바꿔 내려주고, 목록은 '곤약밥 500g 외 2건' 으로 줄여 적는다.
+   2) 안내문에 개발자용 경로(/b2b)를 코드 서체로 박아 두지 않는다.
+      대신 고객이 실제로 보는 문의 화면을 새 탭으로 열어 확인할 수 있게 한다.
+   ============================================================ */
 
 export default function BulkInquiriesClient() {
-  const [rows, setRows] = useState<BulkInquiry[]>([]);
+  const [rows, setRows] = useState<AdminBulkInquiry[]>([]);
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
-
-  const [selected, setSelected] = useState<BulkInquiry | null>(null);
-  const [status, setStatus] = useState<BulkInquiryStatus>("new");
-  const [memo, setMemo] = useState("");
-  const [saving, setSaving] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // 로딩 표시는 필터를 바꾸는 이벤트 핸들러에서 켜고, 여기서는 끄기만 한다.
   // (effect 안에서 동기적으로 setState 하면 연쇄 렌더가 된다 — ReviewsClient 와 같은 방식)
   const load = useCallback(async () => {
+    const sp = new URLSearchParams({ status: tab });
+    if (q.trim()) sp.set("q", q.trim());
     try {
-      const sp = new URLSearchParams({ status: tab });
-      if (q.trim()) sp.set("q", q.trim());
-      const res = await fetch(`/api/admin/bulk-inquiries?${sp}`, { cache: "no-store" });
-      const json = await res.json();
-      if (res.ok) {
-        setRows(json.inquiries ?? []);
-        setCounts(json.counts ?? {});
+      // try/catch 블록 대신 promise 의 catch 를 쓴다 — 동기 구간에서 setState 가 일어나면
+      // effect 안 연쇄 렌더로 잡히고(React 19 규칙), 실제로 lint 가 막는다.
+      const res = await fetch(`/api/admin/bulk-inquiries?${sp}`, { cache: "no-store" }).catch(
+        () => null
+      );
+      if (!res) {
+        setLoadError("네트워크 문제로 문의 목록을 불러오지 못했습니다.");
+        return;
       }
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoadError(json.error ?? "문의 목록을 불러오지 못했습니다.");
+        return;
+      }
+      setLoadError(null);
+      setRows(json.inquiries ?? []);
+      setCounts(json.counts ?? {});
     } finally {
       setLoading(false);
     }
@@ -72,51 +78,9 @@ export default function BulkInquiriesClient() {
     setQ(value);
   }
 
-  function open(row: BulkInquiry) {
-    setSelected(row);
-    setStatus(row.status);
-    setMemo(row.admin_memo ?? "");
-    setModalError(null);
-  }
+  const selected = rows.find((r) => r.id === selectedId) ?? null;
 
-  async function save() {
-    if (!selected) return;
-    setSaving(true);
-    setModalError(null);
-    try {
-      const res = await fetch(`/api/admin/bulk-inquiries/${selected.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status, admin_memo: memo }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        setModalError(json.error ?? "저장하지 못했습니다.");
-        return;
-      }
-      setSelected(null);
-      await load();
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function remove() {
-    if (!selected) return;
-    setSaving(true);
-    try {
-      const res = await fetch(`/api/admin/bulk-inquiries/${selected.id}`, { method: "DELETE" });
-      if (res.ok) {
-        setConfirmDelete(false);
-        setSelected(null);
-        await load();
-      }
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  const columns: DataTableColumn<BulkInquiry>[] = [
+  const columns: DataTableColumn<AdminBulkInquiry>[] = [
     {
       key: "created_at",
       label: "접수일",
@@ -130,7 +94,7 @@ export default function BulkInquiriesClient() {
         <div>
           <p className="font-medium text-ink-900">{r.company}</p>
           <p className="text-xs text-ink-500">
-            {r.contact_name} · {r.phone}
+            {r.contact_name} · <span className="krw">{formatPhone(r.phone)}</span>
           </p>
         </div>
       ),
@@ -143,14 +107,12 @@ export default function BulkInquiriesClient() {
       render: (r) => (r.purpose ? BULK_INQUIRY_PURPOSE_LABELS[r.purpose] : "—"),
     },
     {
-      key: "product_slugs",
+      key: "items",
       label: "관심 품목",
-      width: "110px",
-      align: "center",
-      hideOnMobile: true,
+      width: "220px",
       render: (r) =>
-        r.product_slugs.length > 0 ? (
-          <span className="krw text-ink-600">{r.product_slugs.length}개</span>
+        r.items.length > 0 ? (
+          <span className="line-clamp-1 text-ink-700">{itemsSummary(r.items)}</span>
         ) : (
           <span className="text-ink-300">—</span>
         ),
@@ -166,161 +128,82 @@ export default function BulkInquiriesClient() {
 
   const tabs = [
     { key: "all", label: "전체", count: Object.values(counts).reduce((a, b) => a + b, 0) },
-    ...STATUSES.map((s) => ({
+    ...STATUS_ORDER.map((s) => ({
       key: s,
       label: BULK_INQUIRY_STATUS_LABELS[s],
       count: counts[s] ?? 0,
     })),
   ];
 
+  const emptyMessage = q.trim()
+    ? "검색 조건에 맞는 문의가 없습니다."
+    : tab === "all"
+      ? "아직 접수된 문의가 없습니다."
+      : `'${BULK_INQUIRY_STATUS_LABELS[tab as BulkInquiryStatus]}' 상태인 문의가 없습니다.`;
+
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-4">
-        <p className="text-sm text-ink-500">
-          업소용 벌크·OEM 견적 문의함입니다. 비회원 거래처가 <code className="text-ink-700">/b2b</code> 에서 남긴 문의가 여기로 모입니다.
-        </p>
-        <SearchInput value={q} onChange={changeQuery} placeholder="회사명·담당자·이메일" />
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-sm text-ink-700">
+            고객이 스토어의 업소용·OEM 문의 화면에서 남긴 견적 문의가 여기로 모입니다.
+          </p>
+          <a
+            href="/b2b"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1.5 inline-flex items-center gap-1 text-[13px] text-forest-700 transition-colors hover:text-forest-900"
+          >
+            고객이 보는 문의 화면 열기
+            <ArrowUpRight size={14} strokeWidth={1.5} />
+          </a>
+        </div>
+        <SearchInput
+          value={q}
+          onChange={changeQuery}
+          placeholder="회사명·담당자·이메일"
+          className="w-full sm:w-72"
+        />
       </div>
 
-      <Tabs tabs={tabs} active={tab} onChange={changeTab} />
+      <div>
+        <Tabs tabs={tabs} active={tab} onChange={changeTab} />
+        {tab !== "all" && (
+          <p className="mt-3 text-xs leading-relaxed text-ink-500">
+            {STATUS_MEANINGS[tab as BulkInquiryStatus]}
+          </p>
+        )}
+      </div>
+
+      {loadError && (
+        <p role="alert" className="border border-signal-red/40 bg-signal-red/5 px-4 py-3 text-sm text-signal-red">
+          {loadError}
+        </p>
+      )}
 
       <DataTable
         columns={columns}
         rows={rows}
         loading={loading}
-        onRowClick={open}
-        emptyMessage="접수된 문의가 없습니다."
+        onRowClick={(r) => setSelectedId(r.id)}
+        emptyMessage={emptyMessage}
       />
 
-      <Modal
-        open={selected != null}
-        onClose={() => setSelected(null)}
-        title={selected ? `${selected.company} — 견적 문의` : ""}
-        size="lg"
-        footer={
-          <div className="flex w-full items-center justify-between gap-3">
-            <button
-              type="button"
-              onClick={() => setConfirmDelete(true)}
-              className="text-[13px] text-ink-400 transition-colors hover:text-signal-red"
-            >
-              삭제
-            </button>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => setSelected(null)}
-                className="border border-ink-200 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:border-ink-400"
-              >
-                닫기
-              </button>
-              <button
-                type="button"
-                onClick={save}
-                disabled={saving}
-                className="bg-forest-900 px-5 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-950 disabled:bg-ink-200 disabled:text-ink-400"
-              >
-                {saving ? "저장 중…" : "저장"}
-              </button>
-            </div>
-          </div>
-        }
-      >
-        {selected && (
-          <div className="space-y-6">
-            <dl className="hairline-t">
-              {[
-                ["담당자", selected.contact_name],
-                ["연락처", selected.phone],
-                ["이메일", selected.email],
-                ["사업자등록번호", selected.biz_no ?? "—"],
-                ["문의 유형", selected.purpose ? BULK_INQUIRY_PURPOSE_LABELS[selected.purpose] : "—"],
-                ["예상 물량·주기", selected.volume ?? "—"],
-                [
-                  "관심 품목",
-                  selected.product_slugs.length > 0 ? selected.product_slugs.join(", ") : "—",
-                ],
-                ["접수일", formatDateTime(selected.created_at)],
-              ].map(([k, v]) => (
-                <div
-                  key={k}
-                  className="flex items-baseline justify-between gap-6 border-b border-ink-100 py-2.5"
-                >
-                  <dt className="shrink-0 text-[13px] text-ink-500">{k}</dt>
-                  <dd className="text-right text-[13px] text-ink-900">{v}</dd>
-                </div>
-              ))}
-            </dl>
-
-            <div>
-              <Label>문의 내용</Label>
-              <p className="whitespace-pre-line border border-ink-200 bg-cream-50 px-4 py-3.5 text-sm leading-relaxed text-ink-800">
-                {selected.message}
-              </p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                <a
-                  href={`mailto:${selected.email}?subject=${encodeURIComponent(
-                    `[다름] ${selected.company} 견적 문의 회신`
-                  )}`}
-                  className="border border-ink-200 px-3 py-2 text-[13px] text-ink-700 transition-colors hover:border-ink-400"
-                >
-                  이메일로 회신
-                </a>
-                <a
-                  href={`tel:${selected.phone.replace(/[^0-9+]/g, "")}`}
-                  className="border border-ink-200 px-3 py-2 text-[13px] text-ink-700 transition-colors hover:border-ink-400"
-                >
-                  전화 걸기
-                </a>
-              </div>
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-[180px_1fr]">
-              <div>
-                <Label htmlFor="bi-status">처리 상태</Label>
-                <Select
-                  id="bi-status"
-                  value={status}
-                  onChange={(e) => setStatus(e.target.value as BulkInquiryStatus)}
-                >
-                  {STATUSES.map((s) => (
-                    <option key={s} value={s}>
-                      {BULK_INQUIRY_STATUS_LABELS[s]}
-                    </option>
-                  ))}
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="bi-memo">내부 메모</Label>
-                <Textarea
-                  id="bi-memo"
-                  rows={4}
-                  value={memo}
-                  maxLength={2000}
-                  onChange={(e) => setMemo(e.target.value)}
-                  placeholder="견적 발송 내역, 통화 결과 등"
-                />
-              </div>
-            </div>
-
-            {modalError && (
-              <p role="alert" className="text-sm text-signal-red">
-                {modalError}
-              </p>
-            )}
-          </div>
-        )}
-      </Modal>
-
-      <ConfirmDialog
-        open={confirmDelete}
-        onClose={() => setConfirmDelete(false)}
-        onConfirm={remove}
-        title="문의를 삭제할까요?"
-        description="삭제하면 되돌릴 수 없습니다. 스팸이라면 상태를 '스팸'으로 바꿔 보관하는 편이 좋습니다."
-        confirmLabel="삭제"
-        danger
-      />
+      {selected && (
+        <InquiryDetailModal
+          key={selected.id}
+          inquiry={selected}
+          onClose={() => setSelectedId(null)}
+          onUpdated={(next) => {
+            setRows((prev) => prev.map((r) => (r.id === next.id ? next : r)));
+            void load();
+          }}
+          onDeleted={() => {
+            setSelectedId(null);
+            void load();
+          }}
+        />
+      )}
     </div>
   );
 }

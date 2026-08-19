@@ -3,234 +3,47 @@ import { revalidateTag } from "next/cache";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { requireAdmin } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cache";
-import { cleanStr } from "@/lib/orders";
-import { slugify } from "@/lib/format";
 import {
-  InputError,
-  PRODUCT_STATUSES,
-  STORAGE_TYPES,
-  parseImages,
-  parseProductFields,
-  parseVariants,
-  type ParsedImage,
-  type ParsedVariant,
-} from "../shared";
+  getCategoryLookup,
+  normalizeRow,
+  type CategoryLookup,
+  type SizedImage,
+} from "./row-normalize";
+import { InputError, type ParsedImage, type ParsedVariant } from "../shared";
 
 type BulkMode = "validate" | "create";
 
-interface CategoryLookup {
-  byId: Map<string, string>;
-  bySlug: Map<string, string>;
-  byName: Map<string, string>;
-}
-
 interface BulkResult {
+  /**
+   * 화면 카드의 고유 id. 화면은 배열 순번이 아니라 이 값으로 결과를 찾는다.
+   * 순번으로 찾던 옛 방식은 이름이 빈 카드가 하나만 있어도 뒤의 모든 결과가
+   * 한 칸씩 밀려, 멀쩡한 상품에 남의 오류가 붙었다.
+   */
+  client_id: string | null;
   row_no: number;
   name: string | null;
-  slug: string | null;
   ok: boolean;
+  /** 이미 같은 주소로 등록돼 있어 건너뛴 행 — 재시도를 몇 번 해도 안전하게 만든다 */
+  skipped?: boolean;
   product_id?: string;
   warnings: string[];
   errors: string[];
 }
 
 interface PreparedProduct {
-  rowNo: number;
+  /** results 배열에서 이 행의 자리 */
+  resultIndex: number;
   product: Record<string, unknown>;
   images: ParsedImage[];
+  detailImages: SizedImage[];
   variants: ParsedVariant[];
 }
 
 const MAX_ROWS = 200;
-const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-function scalar(raw: Record<string, unknown>, key: string): unknown {
-  const value = raw[key];
-  if (typeof value === "string") {
-    const trimmed = value.trim();
-    return trimmed === "" ? undefined : trimmed;
-  }
-  return value ?? undefined;
-}
-
-function splitList(value: unknown): string[] {
-  if (Array.isArray(value)) {
-    return value
-      .map((item) => (typeof item === "string" ? item.trim() : String(item ?? "").trim()))
-      .filter(Boolean);
-  }
-  if (typeof value !== "string") return [];
-  return value
-    .split(/[|,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function parseBool(value: unknown, fallback = false): boolean {
-  if (typeof value === "boolean") return value;
-  if (typeof value === "number") return value !== 0;
-  if (typeof value !== "string") return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (["true", "1", "yes", "y", "active", "on", "노출", "추천"].includes(normalized)) return true;
-  if (["false", "0", "no", "n", "inactive", "off", "숨김", "미추천"].includes(normalized)) return false;
-  return fallback;
-}
-
-function parseKeyValues(value: unknown): Record<string, string | number> {
-  if (!value) return {};
-  if (typeof value === "object" && !Array.isArray(value)) {
-    return value as Record<string, string | number>;
-  }
-  if (typeof value !== "string") return {};
-
-  const out: Record<string, string | number> = {};
-  for (const pair of value.split(/[|\n]/)) {
-    const [rawKey, ...rest] = pair.split(/[:=]/);
-    const key = rawKey?.trim();
-    const rawValue = rest.join(":").trim();
-    if (!key || !rawValue) continue;
-    const numeric = Number(rawValue);
-    out[key] = Number.isFinite(numeric) && /^-?\d+(\.\d+)?$/.test(rawValue) ? numeric : rawValue;
-  }
-  return out;
-}
-
-function parseImageList(raw: Record<string, unknown>, name: string): ParsedImage[] {
-  const explicit = raw.images ?? raw.image_urls ?? raw.gallery_image_urls;
-  const primary = splitList(raw.primary_image_urls ?? raw.main_image_urls ?? raw.representative_image_urls);
-  const gallery = splitList(explicit);
-  const merged = [...primary, ...gallery].filter((url, index, arr) => arr.indexOf(url) === index);
-  const images = parseImages(
-    merged.map((url, index) => ({
-      url,
-      alt: index === 0 ? name : `${name} ${index + 1}`,
-    }))
-  );
-  return images ?? [];
-}
-
-function detailImagesMarkdown(raw: Record<string, unknown>, name: string): string {
-  const detailUrls = splitList(raw.detail_image_urls ?? raw.detail_page_image_urls);
-  if (detailUrls.length === 0) return "";
-  return detailUrls
-    .map((url, index) => `![${name} 상세 이미지 ${index + 1}](${url})`)
-    .join("\n\n");
-}
-
-function parseVariantList(raw: Record<string, unknown>): ParsedVariant[] {
-  const value = raw.variants ?? raw.options;
-  if (!value) return [];
-  if (Array.isArray(value)) {
-    const parsed = parseVariants(value);
-    return parsed ?? [];
-  }
-  if (typeof value !== "string") return [];
-
-  const rows = value
-    .split(/[|\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean)
-    .map((item) => {
-      const [name, priceDelta = "0", stock = "0", sku = "", active = "true"] = item
-        .split(":")
-        .map((part) => part.trim());
-      return {
-        name,
-        price_delta: Number(priceDelta || 0),
-        stock: Number(stock || 0),
-        sku: sku || null,
-        is_active: parseBool(active, true),
-      };
-    });
-  const parsed = parseVariants(rows);
-  return parsed ?? [];
-}
-
-function resolveCategory(value: unknown, categories: CategoryLookup): string | null {
-  if (value == null || value === "") return null;
-  const raw = String(value).trim();
-  if (!raw) return null;
-  if (UUID_RE.test(raw)) {
-    if (!categories.byId.has(raw)) throw new InputError(`존재하지 않는 카테고리 ID입니다: ${raw}`);
-    return raw;
-  }
-  const lowered = raw.toLowerCase();
-  const bySlug = categories.bySlug.get(lowered);
-  if (bySlug) return bySlug;
-  const byName = categories.byName.get(raw);
-  if (byName) return byName;
-  throw new InputError(`카테고리를 찾을 수 없습니다: ${raw}`);
-}
-
-function normalizeRow(row: Record<string, unknown>, categories: CategoryLookup): PreparedProduct {
-  const rowNoRaw = Number(row.row_no ?? row.rowNo ?? 0);
-  const rowNo = Number.isInteger(rowNoRaw) && rowNoRaw > 0 ? rowNoRaw : 0;
-  const name = cleanStr(scalar(row, "name"), 200);
-  if (!name) throw new InputError("상품명을 입력해 주세요.");
-
-  const slug = cleanStr(scalar(row, "slug"), 200)?.toLowerCase() ?? slugify(name);
-  const detailMarkdown = detailImagesMarkdown(row, name);
-  const descriptionParts = [cleanStr(scalar(row, "description"), 20_000), detailMarkdown].filter(Boolean);
-
-  const status = String(scalar(row, "status") ?? "draft") as (typeof PRODUCT_STATUSES)[number];
-  if (!PRODUCT_STATUSES.includes(status)) {
-    throw new InputError("상품 상태는 draft, active, sold_out, hidden 중 하나여야 합니다.");
-  }
-  const storageType = String(scalar(row, "storage_type") ?? "room") as (typeof STORAGE_TYPES)[number];
-  if (!STORAGE_TYPES.includes(storageType)) {
-    throw new InputError("보관 방법은 room, chilled, frozen 중 하나여야 합니다.");
-  }
-
-  const product = parseProductFields(
-    {
-      name,
-      slug,
-      subtitle: scalar(row, "subtitle") ?? null,
-      category_id: resolveCategory(row.category ?? row.category_id ?? row.category_slug ?? row.category_name, categories),
-      description: descriptionParts.join("\n\n") || null,
-      story: scalar(row, "story") ?? null,
-      price: row.price,
-      compare_at_price: scalar(row, "compare_at_price") ?? null,
-      cost_price: scalar(row, "cost_price") ?? null,
-      sku: scalar(row, "sku") ?? null,
-      stock: row.stock ?? 0,
-      low_stock_threshold: row.low_stock_threshold ?? 10,
-      status,
-      storage_type: storageType,
-      origin: scalar(row, "origin") ?? null,
-      weight: scalar(row, "weight") ?? null,
-      units_per_pack: row.units_per_pack ?? 1,
-      badges: splitList(row.badges),
-      tags: splitList(row.tags),
-      nutrition: parseKeyValues(row.nutrition),
-      specs: parseKeyValues(row.specs),
-      is_featured: parseBool(row.is_featured, false),
-      sort_order: row.sort_order ?? 0,
-    },
-    { partial: false }
-  );
-
-  return {
-    rowNo,
-    product,
-    images: parseImageList(row, name),
-    variants: parseVariantList(row),
-  };
-}
-
-async function getCategoryLookup(service: SupabaseClient): Promise<CategoryLookup> {
-  const { data, error } = await service.from("categories").select("id, slug, name");
-  if (error) throw new Error(`카테고리 조회 실패: ${error.message}`);
-
-  const byId = new Map<string, string>();
-  const bySlug = new Map<string, string>();
-  const byName = new Map<string, string>();
-  for (const category of (data ?? []) as { id: string; slug: string; name: string }[]) {
-    byId.set(category.id, category.id);
-    bySlug.set(category.slug.toLowerCase(), category.id);
-    byName.set(category.name, category.id);
-  }
-  return { byId, bySlug, byName };
+/** 결과 문구에 쓸 상품 이름 — 코드값 대신 사람이 아는 이름을 쓴다 */
+function displayName(result: BulkResult): string {
+  return `'${result.name?.trim() || "이름 없는 상품"}'`;
 }
 
 async function validateUnique(
@@ -238,48 +51,70 @@ async function validateUnique(
   prepared: PreparedProduct[],
   results: BulkResult[]
 ) {
-  const slugMap = new Map<string, number[]>();
-  const skuMap = new Map<string, number[]>();
+  const slugMap = new Map<string, PreparedProduct[]>();
+  const skuMap = new Map<string, PreparedProduct[]>();
 
   for (const item of prepared) {
     const slug = String(item.product.slug);
-    slugMap.set(slug, [...(slugMap.get(slug) ?? []), item.rowNo]);
+    slugMap.set(slug, [...(slugMap.get(slug) ?? []), item]);
     const sku = item.product.sku;
     if (typeof sku === "string" && sku.trim()) {
-      skuMap.set(sku, [...(skuMap.get(sku) ?? []), item.rowNo]);
+      skuMap.set(sku, [...(skuMap.get(sku) ?? []), item]);
     }
   }
 
-  const addError = (rowNo: number, message: string) => {
-    const result = results.find((r) => r.row_no === rowNo);
-    if (result) {
+  // 같은 양식 안에서 겹치는 경우 — 어느 상품끼리인지 이름으로 알려 준다
+  for (const items of slugMap.values()) {
+    if (items.length < 2) continue;
+    const names = items.map((item) => displayName(results[item.resultIndex])).join(" 과 ");
+    for (const item of items) {
+      const result = results[item.resultIndex];
       result.ok = false;
-      result.errors.push(message);
+      result.errors.push(`${names} 의 상품 주소가 같습니다. 한쪽 상품 주소를 바꿔 주세요.`);
     }
-  };
-
-  for (const [slug, rows] of slugMap) {
-    if (rows.length > 1) rows.forEach((row) => addError(row, `양식 안에서 URL 슬러그가 중복됩니다: ${slug}`));
   }
-  for (const [sku, rows] of skuMap) {
-    if (rows.length > 1) rows.forEach((row) => addError(row, `양식 안에서 SKU가 중복됩니다: ${sku}`));
+  for (const items of skuMap.values()) {
+    if (items.length < 2) continue;
+    const names = items.map((item) => displayName(results[item.resultIndex])).join(" 과 ");
+    for (const item of items) {
+      const result = results[item.resultIndex];
+      result.ok = false;
+      result.errors.push(`${names} 의 상품 코드가 같습니다. 한쪽을 바꾸거나 비워 주세요.`);
+    }
   }
 
+  // 이미 DB 에 있는 주소 — 오류가 아니라 '건너뜀' 으로 다룬다.
+  // 30개 중 22개가 등록된 뒤 8개를 고쳐 다시 보내는 것이 흔한 흐름인데,
+  // 이걸 오류로 처리하면 이미 들어간 22개가 전부 빨갛게 떠서
+  // 등록이 실패한 건지 중복이 생긴 건지 판단할 수 없었다.
   const slugs = [...slugMap.keys()];
   if (slugs.length > 0) {
-    const { data } = await service.from("products").select("slug").in("slug", slugs);
-    const existing = new Set(((data ?? []) as { slug: string }[]).map((row) => row.slug));
-    for (const slug of existing) {
-      for (const rowNo of slugMap.get(slug) ?? []) addError(rowNo, `이미 등록된 URL 슬러그입니다: ${slug}`);
+    const { data } = await service.from("products").select("id, slug").in("slug", slugs);
+    for (const row of (data ?? []) as { id: string; slug: string }[]) {
+      for (const item of slugMap.get(row.slug) ?? []) {
+        const result = results[item.resultIndex];
+        result.skipped = true;
+        result.product_id = row.id;
+        result.warnings.push(
+          `${displayName(result)} 은 이미 등록된 상품이라 건너뛰었습니다. 내용을 바꾸려면 기존 상품에서 수정해 주세요.`
+        );
+      }
     }
   }
 
   const skus = [...skuMap.keys()];
   if (skus.length > 0) {
     const { data } = await service.from("products").select("sku").in("sku", skus);
-    const existing = new Set(((data ?? []) as { sku: string | null }[]).map((row) => row.sku).filter(Boolean));
-    for (const sku of existing) {
-      for (const rowNo of skuMap.get(sku as string) ?? []) addError(rowNo, `이미 등록된 SKU입니다: ${sku}`);
+    for (const row of (data ?? []) as { sku: string | null }[]) {
+      if (!row.sku) continue;
+      for (const item of skuMap.get(row.sku) ?? []) {
+        const result = results[item.resultIndex];
+        if (result.skipped) continue; // 이미 등록된 상품이면 코드가 같은 게 당연하다
+        result.ok = false;
+        result.errors.push(
+          `${displayName(result)} 의 상품 코드는 다른 상품이 이미 쓰고 있습니다. 다른 코드를 넣거나 비워 주세요.`
+        );
+      }
     }
   }
 }
@@ -298,7 +133,11 @@ async function createOne(
 
   if (insertError || !created) {
     result.ok = false;
-    result.errors.push(insertError?.code === "23505" ? "이미 사용 중인 슬러그 또는 SKU입니다." : "상품 등록에 실패했습니다.");
+    result.errors.push(
+      insertError?.code === "23505"
+        ? "같은 상품 주소나 상품 코드를 쓰는 상품이 이미 있습니다."
+        : "상품을 저장하지 못했습니다. 잠시 후 다시 시도해 주세요."
+    );
     return;
   }
 
@@ -314,10 +153,10 @@ async function createOne(
         is_primary: index === 0,
       }))
     );
-    if (error) result.warnings.push("이미지 저장에 실패했습니다.");
-  } else {
-    result.warnings.push("이미지가 없습니다. PG 심사 전 대표 이미지를 추가해 주세요.");
+    if (error) result.warnings.push("상품 사진을 저장하지 못했습니다. 상품 수정 화면에서 다시 올려 주세요.");
   }
+  // 사진 없음 안내는 여기서 하지 않는다 — 행을 읽는 자리(아래 normalizeRow 뒤)에서 한 번만 붙인다.
+  // 두 곳에서 각각 붙였더니 같은 말이 카드마다 두 번 떠서, 사람이 서로 다른 문제 둘로 읽었다.
 
   let insertedVariants: { id: string; name: string; stock: number }[] = [];
   if (item.variants.length > 0) {
@@ -335,7 +174,7 @@ async function createOne(
         }))
       )
       .select("id, name, stock");
-    if (error) result.warnings.push("옵션 저장에 실패했습니다.");
+    if (error) result.warnings.push("옵션을 저장하지 못했습니다. 상품 수정 화면에서 다시 넣어 주세요.");
     insertedVariants = (data ?? []) as { id: string; name: string; stock: number }[];
   }
 
@@ -365,7 +204,7 @@ async function createOne(
   }
   if (logs.length > 0) {
     const { error } = await service.from("inventory_logs").insert(logs);
-    if (error) result.warnings.push("초기 재고 이력 기록에 실패했습니다.");
+    if (error) result.warnings.push("초기 재고 기록을 남기지 못했습니다. 재고 관리에서 확인해 주세요.");
   }
 }
 
@@ -380,10 +219,13 @@ export async function POST(req: Request) {
   const mode = body?.mode === "create" ? "create" : "validate";
   const rows = body?.products;
   if (!Array.isArray(rows) || rows.length === 0) {
-    return NextResponse.json({ error: "등록할 상품 행이 없습니다." }, { status: 400 });
+    return NextResponse.json({ error: "등록할 상품이 없습니다." }, { status: 400 });
   }
   if (rows.length > MAX_ROWS) {
-    return NextResponse.json({ error: `한 번에 최대 ${MAX_ROWS}개 상품까지 처리할 수 있습니다.` }, { status: 400 });
+    return NextResponse.json(
+      { error: `한 번에 최대 ${MAX_ROWS}개 상품까지 처리할 수 있습니다.` },
+      { status: 400 }
+    );
   }
 
   let categories: CategoryLookup;
@@ -398,28 +240,38 @@ export async function POST(req: Request) {
   const results: BulkResult[] = [];
 
   rows.forEach((row, index) => {
-    const rowNo = Number(row.row_no ?? row.rowNo ?? index + 2);
+    const clientId = typeof row.client_id === "string" ? row.client_id : null;
+    const rowNo = Number(row.row_no ?? row.rowNo ?? index + 1);
     try {
-      const item = normalizeRow({ ...row, row_no: rowNo }, categories);
+      const normalized = normalizeRow(row, categories);
       const result: BulkResult = {
-        row_no: item.rowNo || rowNo,
-        name: String(item.product.name ?? ""),
-        slug: String(item.product.slug ?? ""),
+        client_id: clientId,
+        row_no: rowNo,
+        name: String(normalized.product.name ?? ""),
         ok: true,
-        warnings: [],
+        warnings: [...normalized.warnings],
         errors: [],
       };
-      if (item.images.length === 0) result.warnings.push("대표 이미지가 없습니다.");
-      prepared.push(item);
+      // 검증만 눌러도 같은 문구가 보여야 한다 — 등록을 눌러야 알게 되면 고칠 기회가 늦다
+      if (normalized.images.length === 0) {
+        result.warnings.push("상품 사진이 없습니다. 판매를 시작하기 전에 대표 사진을 넣어 주세요.");
+      }
       results.push(result);
+      prepared.push({
+        resultIndex: results.length - 1,
+        product: normalized.product,
+        images: normalized.images,
+        detailImages: normalized.detailImages,
+        variants: normalized.variants,
+      });
     } catch (e) {
       results.push({
+        client_id: clientId,
         row_no: rowNo,
         name: typeof row.name === "string" ? row.name : null,
-        slug: typeof row.slug === "string" ? row.slug : null,
         ok: false,
         warnings: [],
-        errors: [e instanceof InputError || e instanceof Error ? e.message : "행을 해석하지 못했습니다."],
+        errors: [e instanceof InputError || e instanceof Error ? e.message : "이 상품을 읽지 못했습니다."],
       });
     }
   });
@@ -428,24 +280,30 @@ export async function POST(req: Request) {
 
   if (mode === "create") {
     for (const item of prepared) {
-      const result = results.find((r) => r.row_no === item.rowNo);
-      if (!result || !result.ok) continue;
+      const result = results[item.resultIndex];
+      // 이미 등록돼 있으면 건너뛴다 — 재시도를 몇 번 눌러도 중복이 생기지 않는다
+      if (!result.ok || result.skipped) continue;
       await createOne(service, user.id, item, result);
     }
 
     // 실제로 insert 된 행이 하나라도 있을 때만 무효화한다.
     // mode==="validate" 는 SELECT 뿐이고, create 여도 전 행이 검증에서 걸리면 쓰기가 없다.
-    // product_id 는 createOne 이 상품 insert 에 성공했을 때만 채운다.
-    if (results.some((r) => r.product_id)) {
+    // skipped 인 행은 product_id 가 기존 상품 id 이므로 새로 쓴 것이 아니다.
+    if (results.some((r) => r.product_id && !r.skipped)) {
       revalidateTag(CACHE_TAGS.products, { expire: 0 });
     }
   }
 
-  const okCount = results.filter((row) => row.ok).length;
-  const failedCount = results.length - okCount;
+  // 건너뛴 행(이미 같은 주소로 등록된 상품)은 ok:true 로 돌려준다 — 재시도를 안전하게 하려는 값이지
+  // "이번에 등록된다" 는 뜻이 아니다. 그래서 셀 때는 반드시 빼야 한다.
+  // 예전에는 그대로 세어, 30개 중 30개가 이미 있는 상황에서도 "30개를 등록했습니다" 라고 적었다.
+  const skippedCount = results.filter((row) => row.skipped).length;
+  const okCount = results.filter((row) => row.ok && !row.skipped).length;
+  const failedCount = results.filter((row) => !row.ok).length;
   return NextResponse.json({
     mode,
     okCount,
+    skippedCount,
     failedCount,
     results,
   });

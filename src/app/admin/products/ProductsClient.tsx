@@ -1,321 +1,330 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
-import Image from "next/image";
-import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
+/* ============================================================
+   상품 목록 화면.
+
+   이 화면을 다시 만든 이유:
+   전에는 상품 27개를 한 건씩 열어야만 어떤 변경도 할 수 있었다. 카테고리를 옮기거나
+   수다락 13개 판매가를 8% 올리는 일은 개발자가 스크립트를 돌려 주지 않으면 불가능했고,
+   관리자에게 가장 중요한 구분인 공급처(자체/수다락)는 DB 에만 있고 화면엔 없었다.
+   게다가 판매가 0원짜리 업소용 벌크 상품을 드롭다운 한 번으로 스토어에 노출시킬 수 있었다.
+
+   그래서 (1) 행 선택과 일괄 작업, (2) 공급처·브랜드 표기와 필터, (3) 정렬·페이지 크기,
+   (4) 상품 건전성 배지, (5) 0원 상품의 판매중 전환 차단을 넣었다.
+   조회 상태는 useProductList 훅이, 화면 조각은 _list/ 아래가 맡고 여기서는 그 둘을
+   엮어 "누르면 무슨 일이 일어나는지" 만 다룬다.
+   ============================================================ */
+
+import { useState } from "react";
 import Pagination from "@/components/admin/Pagination";
-import SearchInput from "@/components/admin/SearchInput";
-import { Select } from "@/components/admin/Field";
-import { krw, formatDate } from "@/lib/format";
-import type { Category, ProductStatus, ProductWithImages } from "@/lib/types";
-import {
-  BTN_GHOST,
-  BTN_PRIMARY,
-  PRODUCT_STATUS_OPTIONS,
-  PRODUCT_STATUS_TONES,
-} from "./product-ui";
+import ConfirmDialog from "@/components/admin/ConfirmDialog";
+import type { ProductStatus } from "@/lib/types";
+import { BTN_GHOST } from "./product-ui";
+import ProductListTable from "./_list/ProductListTable";
+import ProductsToolbar from "./_list/ProductsToolbar";
+import ListMetaBar from "./_list/ListMetaBar";
+import BulkActionBar from "./_list/BulkActionBar";
+import PriceAdjustModal from "./_list/PriceAdjustModal";
+import { useProductList } from "./_list/useProductList";
+import { summarizeBulkResult } from "./_list/bulk-summary";
+import { buildBulkConfirm, type BulkConfirmCopy } from "./_list/bulk-confirm";
+import type { BulkAction, BulkEditResult, ProductListRow } from "./_list/list-types";
 
-const PAGE_SIZE = 20;
-
-interface ListResponse {
-  products: ProductWithImages[];
-  total: number;
-  page: number;
-  totalPages: number;
+interface Notice {
+  tone: "ok" | "warn";
+  text: string;
 }
 
-function thumbnailOf(p: ProductWithImages): string | null {
-  const imgs = [...(p.product_images ?? [])].sort((a, b) => a.sort_order - b.sort_order);
-  return imgs.find((i) => i.is_primary)?.url ?? imgs[0]?.url ?? null;
-}
-
-/** 옵션이 있으면 옵션 재고 합계, 없으면 상품 재고 */
-function stockOf(p: ProductWithImages): { stock: number; hasVariants: boolean } {
-  const variants = p.product_variants ?? [];
-  if (variants.length > 0) {
-    return { stock: variants.reduce((sum, v) => sum + v.stock, 0), hasVariants: true };
-  }
-  return { stock: p.stock, hasVariants: false };
+/** 확인을 기다리는 일괄 작업 — 무엇을 할지와 어떻게 물어볼지를 함께 들고 있는다 */
+interface PendingBulk {
+  action: BulkAction;
+  copy: BulkConfirmCopy;
 }
 
 export default function ProductsClient() {
-  const router = useRouter();
+  const list = useProductList();
 
-  // rows === null 이면 로딩 중 (스켈레톤)
-  const [rows, setRows] = useState<ProductWithImages[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const loading = rows === null;
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [busyIds, setBusyIds] = useState<Set<string>>(new Set());
+  /** 행 단위 실패 안내 — 화면 맨 위 배너 하나로는 20번째 행의 실패를 볼 수 없다 */
+  const [rowErrors, setRowErrors] = useState<Record<string, string>>({});
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [notice, setNotice] = useState<Notice | null>(null);
+  const [priceModalOpen, setPriceModalOpen] = useState(false);
+  /** 가격 조정 실패 사유 — 모달을 닫지 않고 그 안에서 알린다 */
+  const [priceError, setPriceError] = useState<string | null>(null);
+  const [pendingActivate, setPendingActivate] = useState<ProductListRow | null>(null);
+  const [pendingBulk, setPendingBulk] = useState<PendingBulk | null>(null);
 
-  const [q, setQ] = useState("");
-  const [appliedQ, setAppliedQ] = useState("");
-  const [category, setCategory] = useState("");
-  const [status, setStatus] = useState("");
-  const [page, setPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(1);
-  const [total, setTotal] = useState(0);
+  /* ---------- 행 단위 상태 변경 ---------- */
 
-  // 카테고리 필터 옵션
-  useEffect(() => {
-    fetch("/api/admin/categories")
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data: { categories: Category[] } | null) => {
-        if (data) setCategories(data.categories);
-      })
-      .catch(() => undefined);
-  }, []);
+  async function applyStatus(row: ProductListRow, next: ProductStatus) {
+    setRowErrors((prev) =>
+      Object.fromEntries(Object.entries(prev).filter(([id]) => id !== row.id))
+    );
+    setBusyIds((prev) => new Set(prev).add(row.id));
+    list.setRows((rs) => rs?.map((r) => (r.id === row.id ? { ...r, status: next } : r)) ?? rs);
 
-  // 검색어 디바운스
-  useEffect(() => {
-    if (q === appliedQ) return;
-    const t = setTimeout(() => {
-      setRows(null);
-      setPage(1);
-      setAppliedQ(q);
-    }, 400);
-    return () => clearTimeout(t);
-  }, [q, appliedQ]);
-
-  // 목록 로드 — 필터/페이지 변경 시 재조회
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const params = new URLSearchParams({ page: String(page), limit: String(PAGE_SIZE) });
-        if (appliedQ) params.set("q", appliedQ);
-        if (category) params.set("category", category);
-        if (status) params.set("status", status);
-        const res = await fetch(`/api/admin/products?${params.toString()}`);
-        if (!res.ok) {
-          const body = (await res.json().catch(() => null)) as { error?: string } | null;
-          throw new Error(body?.error ?? "상품 목록을 불러오지 못했습니다.");
-        }
-        const data = (await res.json()) as ListResponse;
-        if (cancelled) return;
-        setRows(data.products);
-        setTotal(data.total);
-        setTotalPages(data.totalPages);
-        setError(null);
-      } catch (e) {
-        if (cancelled) return;
-        setError(e instanceof Error ? e.message : "상품 목록을 불러오지 못했습니다.");
-        setRows([]);
-      }
-    })();
-    return () => {
-      cancelled = true;
+    const fail = (message: string) => {
+      // 되돌리는 것은 이 행 하나뿐이다 — 목록 전체를 되돌리면 방금 성공한 다른 행까지 사라진다
+      list.setRows(
+        (rs) => rs?.map((r) => (r.id === row.id ? { ...r, status: row.status } : r)) ?? rs
+      );
+      setRowErrors((prev) => ({ ...prev, [row.id]: message }));
     };
-  }, [appliedQ, category, status, page]);
 
-  /** 상태 인라인 변경 — 낙관적 반영 후 실패 시 롤백 */
-  async function changeStatus(id: string, next: ProductStatus) {
-    if (!rows) return;
-    const prev = rows;
-    setRows(rows.map((r) => (r.id === id ? { ...r, status: next } : r)));
-    const res = await fetch(`/api/admin/products/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ product: { status: next } }),
-    });
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: string } | null;
-      setRows(prev);
-      setError(body?.error ?? "상태 변경에 실패했습니다.");
+    try {
+      const res = await fetch(`/api/admin/products/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ product: { status: next } }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as {
+          error?: string;
+        } | null;
+        // 서버가 돌려준 한국어 사유를 그대로 보여 준다 (예: 판매가 0원이라 판매중 불가)
+        fail(body?.error ?? "상태를 저장하지 못했습니다. 다시 시도해 주세요.");
+      }
+    } catch {
+      fail("연결이 끊겨 저장하지 못했습니다. 다시 시도해 주세요.");
+    } finally {
+      setBusyIds((prev) => {
+        const nextSet = new Set(prev);
+        nextSet.delete(row.id);
+        return nextSet;
+      });
     }
   }
 
-  const columns: DataTableColumn<ProductWithImages>[] = [
-    {
-      key: "name",
-      label: "상품",
-      render: (p) => {
-        const thumb = thumbnailOf(p);
-        return (
-          <div className="flex items-center gap-3">
-            <div className="relative h-11 w-11 shrink-0 overflow-hidden border border-ink-200 bg-cream-100">
-              {thumb ? (
-                <Image src={thumb} alt={p.name} fill sizes="44px" className="object-cover" />
-              ) : (
-                <span className="flex h-full w-full items-center justify-center text-[10px] text-ink-300">
-                  No img
-                </span>
-              )}
-            </div>
-            <div className="min-w-0">
-              <p className="truncate font-medium text-ink-900">{p.name}</p>
-              <p className="mt-0.5 truncate text-xs text-ink-400">{p.sku ?? "SKU 미지정"}</p>
-            </div>
-          </div>
-        );
-      },
-    },
-    {
-      key: "category",
-      label: "카테고리",
-      width: "120px",
-      hideOnMobile: true,
-      render: (p) => p.categories?.name ?? <span className="text-ink-300">미분류</span>,
-    },
-    {
-      key: "price",
-      label: "판매가",
-      width: "130px",
-      align: "right",
-      render: (p) => (
-        <div className="krw">
-          <span className="font-medium">{krw(p.price)}원</span>
-          {p.compare_at_price != null && p.compare_at_price > p.price && (
-            <span className="ml-1.5 text-xs text-ink-400 line-through">
-              {krw(p.compare_at_price)}
-            </span>
-          )}
-        </div>
-      ),
-    },
-    {
-      key: "stock",
-      label: "재고",
-      width: "110px",
-      align: "right",
-      render: (p) => {
-        const { stock, hasVariants } = stockOf(p);
-        const low = stock <= p.low_stock_threshold;
-        return (
-          <div>
-            <span className={`krw font-medium ${low ? "text-signal-amber" : "text-ink-900"}`}>
-              {krw(stock)}
-            </span>
-            {hasVariants && <span className="ml-1 text-xs text-ink-400">옵션 합계</span>}
-          </div>
-        );
-      },
-    },
-    {
-      key: "status",
-      label: "상태",
-      width: "130px",
-      align: "center",
-      render: (p) => (
-        <div onClick={(e) => e.stopPropagation()}>
-          <Select
-            aria-label={`${p.name} 상태 변경`}
-            value={p.status}
-            onChange={(e) => void changeStatus(p.id, e.target.value as ProductStatus)}
-            className={`mx-auto w-28 text-left [&_select]:py-1.5 [&_select]:text-xs ${PRODUCT_STATUS_TONES[p.status]}`}
-          >
-            {PRODUCT_STATUS_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-        </div>
-      ),
-    },
-    {
-      key: "sort_order",
-      label: "노출순서",
-      width: "90px",
-      align: "center",
-      hideOnMobile: true,
-      render: (p) => <span className="krw text-ink-600">{p.sort_order}</span>,
-    },
-    {
-      key: "created_at",
-      label: "등록일",
-      width: "110px",
-      hideOnMobile: true,
-      render: (p) => <span className="text-ink-600">{formatDate(p.created_at)}</span>,
-    },
-  ];
+  function requestStatusChange(row: ProductListRow, next: ProductStatus) {
+    if (next === row.status) return;
+    // 판매중으로 올리면 곧바로 고객 스토어에 뜬다 — 한 단계 확인을 받는다
+    if (next === "active") {
+      setPendingActivate(row);
+      return;
+    }
+    void applyStatus(row, next);
+  }
+
+  /* ---------- 일괄 작업 ---------- */
+
+  /**
+   * @returns 서버가 요청을 받아들였으면 true. 실패했으면 false —
+   *          가격 모달은 이 값을 보고 **성공했을 때만** 닫는다. 예전에는 실패해도
+   *          모달을 닫아 버려서 방금 고른 대상·방식·끝자리가 전부 사라졌고,
+   *          관리자는 처음부터 다시 골라야 했다.
+   */
+  async function runBulk(action: BulkAction, headline: string): Promise<boolean> {
+    const ids = list.selectedRows.map((r) => r.id);
+    if (ids.length === 0) return false;
+    setBulkBusy(true);
+    setNotice(null);
+    const failWith = (text: string) => {
+      // 가격은 모달 안에서, 나머지는 목록 위 배너로 알린다
+      if (action.kind === "price") setPriceError(text);
+      else setNotice({ tone: "warn", text });
+    };
+    try {
+      const res = await fetch("/api/admin/products/bulk-edit", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids, action }),
+      });
+      const body = (await res.json().catch(() => null)) as
+        (BulkEditResult & { error?: string }) | null;
+      if (!res.ok || !body) {
+        failWith(body?.error ?? "일괄 변경에 실패했습니다.");
+        return false;
+      }
+      setPriceError(null);
+      setNotice({
+        tone: body.failed.length > 0 ? "warn" : "ok",
+        text: summarizeBulkResult(headline, body),
+      });
+      list.reload();
+      return true;
+    } catch {
+      failWith("연결이 끊겨 일괄 변경을 마치지 못했습니다.");
+      return false;
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  /**
+   * 상태·카테고리·추천은 곧바로 실행하지 않고 확인을 한 번 받는다.
+   * 행 하나에는 이미 확인이 있었는데 N개를 바꾸는 쪽이 무방비였다.
+   */
+  function requestBulk(action: BulkAction) {
+    setPendingBulk({
+      action,
+      copy: buildBulkConfirm(action, list.selectedRows, list.categories),
+    });
+  }
+
+  const pageRowCount = list.rows?.length ?? 0;
 
   return (
     <div>
-      {/* 툴바 */}
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-        <SearchInput
-          value={q}
-          onChange={setQ}
-          onSubmit={() => {
-            setRows(null);
-            setAppliedQ(q);
-            setPage(1);
-          }}
-          placeholder="상품명 · SKU 검색"
-          className="lg:max-w-72"
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <Select
-            aria-label="카테고리 필터"
-            value={category}
-            onChange={(e) => {
-              setRows(null);
-              setCategory(e.target.value);
-              setPage(1);
-            }}
-            className="w-40"
-          >
-            <option value="">전체 카테고리</option>
-            {categories.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
-              </option>
-            ))}
-          </Select>
-          <Select
-            aria-label="상태 필터"
-            value={status}
-            onChange={(e) => {
-              setRows(null);
-              setStatus(e.target.value);
-              setPage(1);
-            }}
-            className="w-32"
-          >
-            <option value="">전체 상태</option>
-            {PRODUCT_STATUS_OPTIONS.map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </Select>
-          <Link href="/admin/products/bulk" className={`${BTN_GHOST} whitespace-nowrap`}>
-            일괄 등록
-          </Link>
-          <Link href="/admin/products/new" className={`${BTN_PRIMARY} whitespace-nowrap`}>
-            새 상품
-          </Link>
-        </div>
-      </div>
+      <ProductsToolbar
+        q={list.q}
+        onQChange={list.setQ}
+        onQSubmit={() => list.changeQuery(() => list.setAppliedQ(list.q))}
+        category={list.category}
+        onCategoryChange={(v) => list.changeQuery(() => list.setCategory(v))}
+        supplier={list.supplier}
+        onSupplierChange={(v) => list.changeQuery(() => list.setSupplier(v))}
+        brand={list.brand}
+        onBrandChange={(v) => list.changeQuery(() => list.setBrand(v))}
+        status={list.status}
+        onStatusChange={(v) => list.changeQuery(() => list.setStatus(v))}
+        categories={list.categories}
+        facets={list.facets}
+        hasFilter={list.hasFilter}
+        onReset={list.resetFilters}
+      />
 
-      {error && (
-        <p className="mb-4 border border-ink-200 bg-cream-100 px-4 py-3 text-sm text-signal-red">
-          {error}
+      {list.listError && (
+        <p className="mb-4 border border-signal-red/40 bg-signal-red/5 px-4 py-3 text-sm text-signal-red">
+          {list.listError}
         </p>
       )}
 
-      <p className="mb-3 text-xs text-ink-400">
-        전체 <span className="krw font-medium text-ink-600">{krw(total)}</span>개 상품
-      </p>
+      {notice && (
+        <p
+          className={`mb-4 border px-4 py-3 text-sm leading-relaxed ${
+            notice.tone === "ok"
+              ? "border-forest-600/40 bg-forest-50 text-forest-800"
+              : "border-signal-amber/50 bg-signal-amber/5 text-signal-amber"
+          }`}
+        >
+          {notice.text}
+        </p>
+      )}
 
-      <DataTable<ProductWithImages>
-        columns={columns}
-        rows={rows ?? []}
-        loading={loading}
-        emptyMessage="등록된 상품이 없습니다. 첫 상품을 등록해 보세요."
-        onRowClick={(p) => router.push(`/admin/products/${p.id}`)}
-        pagination={
-          <Pagination
-            page={page}
-            totalPages={totalPages}
-            onChange={(p) => {
-              setRows(null);
-              setPage(p);
-            }}
-          />
+      {list.selectedRows.length > 0 && (
+        <BulkActionBar
+          count={list.selectedRows.length}
+          zeroPriceCount={list.selectedRows.filter((r) => r.price <= 0).length}
+          categories={list.categories}
+          busy={bulkBusy}
+          onStatus={(value) => requestBulk({ kind: "status", value })}
+          onCategory={(value) => requestBulk({ kind: "category", value })}
+          onFeatured={(value) => requestBulk({ kind: "featured", value })}
+          onPriceAdjust={() => {
+            setPriceError(null);
+            setPriceModalOpen(true);
+          }}
+          onDropZeroPrice={() =>
+            list.deselectIds(list.selectedRows.filter((r) => r.price <= 0).map((r) => r.id))
+          }
+          onClear={list.clearSelection}
+        />
+      )}
+
+      <ListMetaBar
+        total={list.total}
+        rangeStart={list.total === 0 ? 0 : (list.page - 1) * list.pageSize + 1}
+        rangeEnd={Math.min(list.total, (list.page - 1) * list.pageSize + pageRowCount)}
+        hasFilter={list.hasFilter}
+        pageFullySelected={pageRowCount > 0 && list.selectedRows.length === pageRowCount}
+        pageRowCount={pageRowCount}
+        sort={list.sort}
+        dir={list.dir}
+        onSortChange={(nextSort, nextDir) =>
+          list.changeQuery(() => {
+            list.setSort(nextSort);
+            list.setDir(nextDir);
+          })
         }
+        pageSize={list.pageSize}
+        onPageSizeChange={(size) => list.changeQuery(() => list.setPageSize(size))}
+      />
+
+      <ProductListTable
+        rows={list.rows ?? []}
+        loading={list.loading}
+        selectedIds={list.selectedIds}
+        busyIds={busyIds}
+        rowErrors={rowErrors}
+        sort={list.sort}
+        dir={list.dir}
+        onSort={list.toggleSort}
+        onToggle={list.toggleSelect}
+        onToggleAll={list.toggleSelectAll}
+        onStatusChange={requestStatusChange}
+        emptyMessage={
+          list.hasFilter ? (
+            <div>
+              <p className="headline-serif text-lg text-ink-500">조건에 맞는 상품이 없습니다.</p>
+              <button type="button" onClick={list.resetFilters} className={`${BTN_GHOST} mt-4`}>
+                조건 지우고 전체 보기
+              </button>
+            </div>
+          ) : (
+            <p className="headline-serif text-lg text-ink-500">
+              등록된 상품이 없습니다. 첫 상품을 등록해 보세요.
+            </p>
+          )
+        }
+      />
+
+      <div className="mt-6">
+        <Pagination
+          page={list.page}
+          totalPages={list.totalPages}
+          onChange={(p) => list.changeQuery(() => list.setPage(p), { resetPage: false })}
+        />
+      </div>
+
+      <PriceAdjustModal
+        open={priceModalOpen}
+        rows={list.selectedRows}
+        busy={bulkBusy}
+        errorText={priceError}
+        onClose={() => {
+          setPriceModalOpen(false);
+          setPriceError(null);
+        }}
+        onApply={(plan) => {
+          const action: BulkAction = { kind: "price", plan };
+          void runBulk(
+            action,
+            buildBulkConfirm(action, list.selectedRows, list.categories).headline
+          )
+            // 성공했을 때만 닫는다 — 실패하면 고른 조건을 그대로 두고 모달 안에서 이유를 알린다
+            .then((done) => {
+              if (done) setPriceModalOpen(false);
+            });
+        }}
+      />
+
+      <ConfirmDialog
+        open={pendingActivate !== null}
+        onClose={() => setPendingActivate(null)}
+        onConfirm={async () => {
+          if (pendingActivate) await applyStatus(pendingActivate, "active");
+        }}
+        title="고객 스토어에 바로 노출됩니다"
+        description={
+          pendingActivate
+            ? `'${pendingActivate.name}'을(를) 판매중으로 바꾸면 고객 스토어에 즉시 나타나고 주문을 받게 됩니다. 계속할까요?`
+            : ""
+        }
+        confirmLabel="판매중으로 바꾸기"
+      />
+
+      {/* 일괄 상태·카테고리·추천 확인 — 드롭다운을 스치기만 해도 N개가 바뀌던 자리 */}
+      <ConfirmDialog
+        open={pendingBulk !== null}
+        onClose={() => setPendingBulk(null)}
+        onConfirm={async () => {
+          if (pendingBulk) await runBulk(pendingBulk.action, pendingBulk.copy.headline);
+        }}
+        title={pendingBulk?.copy.title ?? ""}
+        description={pendingBulk?.copy.description ?? ""}
+        confirmLabel={pendingBulk?.copy.confirmLabel ?? "확인"}
+        danger={pendingBulk?.action.kind === "status" && pendingBulk.action.value === "active"}
       />
     </div>
   );

@@ -3,11 +3,13 @@ import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cache";
 import { isUuid } from "@/lib/orders";
-import { parseCategoryFields } from "../shared";
+import { findDuplicateName, parseCategoryFields } from "../shared";
 
 /* ============================================================
-   PATCH  /api/admin/categories/[id] — 수정 (이름/slug/설명/이미지/활성/순서)
-   DELETE /api/admin/categories/[id] — 삭제 (소속 상품은 미분류로 전환)
+   PATCH  /api/admin/categories/[id] — 수정 (이름/주소/설명/이미지/노출/순서)
+   DELETE /api/admin/categories/[id] — 삭제
+     · ?moveTo=<카테고리 id> 를 주면 소속 상품을 그 카테고리로 옮긴 뒤 지운다.
+     · 주지 않으면 예전대로 미분류가 된다(products.category_id 는 on delete set null).
    ============================================================ */
 
 type RouteParams = { params: Promise<{ id: string }> };
@@ -43,7 +45,19 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
       .neq("id", id)
       .maybeSingle();
     if (dup) {
-      return NextResponse.json({ error: "이미 사용 중인 URL 슬러그입니다." }, { status: 400 });
+      return NextResponse.json({ error: "이미 사용 중인 주소입니다." }, { status: 400 });
+    }
+  }
+
+  // 이름 중복 — DB 에 unique 가 없어 서버가 직접 본다(POST 와 같은 이유)
+  if (fields.name) {
+    const { data: named } = await service.from("categories").select("id, name");
+    const sameName = findDuplicateName(named, fields.name as string, id);
+    if (sameName) {
+      return NextResponse.json(
+        { error: `'${sameName}' 카테고리가 이미 있습니다. 다른 이름을 지어 주세요.` },
+        { status: 400 }
+      );
     }
   }
 
@@ -56,7 +70,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   if (error) {
     if (error.code === "23505") {
-      return NextResponse.json({ error: "이미 사용 중인 URL 슬러그입니다." }, { status: 400 });
+      return NextResponse.json({ error: "이미 사용 중인 주소입니다." }, { status: 400 });
     }
     console.error("[admin/categories] 수정 실패:", error.message);
     return NextResponse.json({ error: "카테고리 수정에 실패했습니다." }, { status: 500 });
@@ -79,7 +93,7 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
   return NextResponse.json({ category: updated });
 }
 
-export async function DELETE(_req: NextRequest, { params }: RouteParams) {
+export async function DELETE(req: NextRequest, { params }: RouteParams) {
   const auth = await requireAdmin();
   if ("error" in auth) return auth.error;
   const { service } = auth;
@@ -94,7 +108,40 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
     .maybeSingle();
   if (!existing) return notFound();
 
-  // products.category_id는 on delete set null — 소속 상품은 미분류로 남는다
+  /* 소속 상품 이사 —
+     삭제하면 products.category_id 는 on delete set null 로 미분류가 된다. 그런데 관리자
+     상품 목록에는 '미분류만 보기' 필터도, 여러 상품의 카테고리를 한 번에 바꾸는 수단도 없다.
+     즉 7개짜리 카테고리를 지우면 상품 7개가 27개 목록 속으로 흩어져 하나씩 찾아 고쳐야 한다.
+     그래서 지우기 전에 옮겨 담을 카테고리를 받아 한 번에 이동시킨다. */
+  const moveTo = req.nextUrl.searchParams.get("moveTo");
+  let movedCount = 0;
+  if (moveTo) {
+    if (!isUuid(moveTo) || moveTo === id) {
+      return NextResponse.json({ error: "옮길 카테고리를 다시 골라 주세요." }, { status: 400 });
+    }
+    const { data: target } = await service
+      .from("categories")
+      .select("id")
+      .eq("id", moveTo)
+      .maybeSingle();
+    if (!target) {
+      return NextResponse.json({ error: "옮길 카테고리를 찾을 수 없습니다." }, { status: 400 });
+    }
+    const { data: moved, error: moveError } = await service
+      .from("products")
+      .update({ category_id: moveTo })
+      .eq("category_id", id)
+      .select("id");
+    if (moveError) {
+      console.error("[admin/categories] 상품 이동 실패:", moveError.message);
+      return NextResponse.json(
+        { error: "소속 상품을 옮기지 못했습니다. 카테고리는 그대로 두었습니다." },
+        { status: 500 }
+      );
+    }
+    movedCount = moved?.length ?? 0;
+  }
+
   const { error } = await service.from("categories").delete().eq("id", id);
   if (error) {
     console.error("[admin/categories] 삭제 실패:", error.message);
@@ -107,5 +154,5 @@ export async function DELETE(_req: NextRequest, { params }: RouteParams) {
   revalidateTag(CACHE_TAGS.categories, { expire: 0 });
   revalidateTag(CACHE_TAGS.products, { expire: 0 });
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({ ok: true, moved: movedCount });
 }

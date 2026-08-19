@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { VIP_BASE_PRICE_LABEL } from "@/lib/admin-labels";
 import { krw } from "@/lib/format";
 import { isUuid, isoDate, jsonError, posInt, rateNum, readBody } from "../_lib/validate";
 
@@ -10,10 +11,26 @@ import { isUuid, isoDate, jsonError, posInt, rateNum, readBody } from "../_lib/v
 const PRICE_SELECT =
   "*, products(id, name, price), vip_groups(id, name), profiles(id, name, email)";
 
-/** GET — 전용 가격 전체 목록 */
-export async function GET() {
+/**
+ * GET — 전용 가격 전체 목록.
+ * `?summary=1` 이면 개수만 돌려준다 — VIP 화면 상단의 진행 안내가
+ * 3단계 완료 여부를 확인하려고 부르는데, 그 한 줄 때문에 목록 전체를
+ * 내려받게 할 이유가 없다.
+ */
+export async function GET(req: Request) {
   const auth = await requireAdmin();
   if ("error" in auth) return auth.error;
+
+  if (new URL(req.url).searchParams.get("summary")) {
+    const { count, error: countError } = await auth.service
+      .from("vip_product_prices")
+      .select("id", { count: "exact", head: true });
+    if (countError) {
+      console.error("[admin/vip/prices summary]", countError.message);
+      return jsonError("전용 가격 현황을 불러오지 못했습니다.", 500);
+    }
+    return NextResponse.json({ total: count ?? 0 });
+  }
 
   const { data, error } = await auth.service
     .from("vip_product_prices")
@@ -95,12 +112,12 @@ export async function POST(req: Request) {
     const hasPrice = item.custom_price !== undefined && item.custom_price !== null && item.custom_price !== "";
     const hasRate = item.discount_rate !== undefined && item.discount_rate !== null && item.discount_rate !== "";
     if (hasPrice === hasRate) {
-      return jsonError("상품마다 지정가 또는 할인율 중 하나만 입력해 주세요.");
+      return jsonError("상품마다 ‘적용할 가격’ 또는 ‘할인율’ 중 하나만 넣어 주세요.");
     }
 
     if (hasPrice) {
       const price = posInt(item.custom_price);
-      if (price === undefined) return jsonError("지정가는 1원 이상의 정수여야 합니다.");
+      if (price === undefined) return jsonError("적용할 가격은 1원 이상의 정수로 넣어 주세요.");
       items.push({ product_id: item.product_id, custom_price: price, discount_rate: null });
     } else {
       const rate = rateNum(item.discount_rate);
@@ -111,7 +128,7 @@ export async function POST(req: Request) {
     }
   }
 
-  // ---------- 상품 존재/정가 검증 ----------
+  // ---------- 상품 존재 여부와 기본 판매가 상한 검증 ----------
   const productIds = items.map((i) => i.product_id);
   const { data: products, error: productError } = await auth.service
     .from("products")
@@ -127,7 +144,7 @@ export async function POST(req: Request) {
     if (!product) return jsonError("존재하지 않는 상품이 포함되어 있습니다.", 404);
     if (item.custom_price !== null && item.custom_price > product.price) {
       return jsonError(
-        `'${product.name}'의 지정가는 정가 ${krw(product.price)}원을 넘을 수 없습니다.`
+        `'${product.name}'의 적용할 가격은 ${VIP_BASE_PRICE_LABEL} ${krw(product.price)}원을 넘을 수 없습니다.`
       );
     }
   }

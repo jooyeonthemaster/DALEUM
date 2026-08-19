@@ -1,382 +1,139 @@
 "use client";
 
-import { useMemo, useRef, useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
+/* ============================================================
+   상품 일괄 등록 — 엑셀 한 장 + 이미지 폴더 하나로 신상품 여러 개를 올린다
+
+   이 화면이 다시 만들어진 이유는 units 지시서에 적힌 결함들 때문이다. 요약하면:
+   - 회사가 실제 쓰는 품목표를 못 읽었다 (제목 줄이 3번째, 제품명이 병합셀)
+   - 10입/20입/30입 같은 옵션을 넣을 방법이 없었다
+   - 18MB 상세 원본이 5MB 상한에 막혀 상세페이지 있는 상품은 등록 자체가 불가능했다
+   - 검증 배지가 엉뚱한 카드에 붙었다 (배열 순번으로 결과를 찾았다)
+   - 한글 상품명의 주소가 item-0zh902d13retid 가 되고 그 코드가 오류 문구에 노출됐다
+   - 일부만 성공하면 복구할 길이 없었다
+
+   해결 방식은 크게 둘이다.
+   (1) **추측한 것은 반드시 사람에게 먼저 보여 준다** — 엑셀 해석도 폴더 배정도
+       확인 화면을 거치고, 틀린 것만 고쳐서 확정한다.
+   (2) **결과는 초안 고유 id 로 잇는다** — 배열 순번은 빈 카드 하나에도 어긋난다.
+   ============================================================ */
+
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import type { Category } from "@/lib/types";
+import DraftCard from "./DraftCard";
+import { MAX_GALLERY_IMAGES } from "./DraftImageLane";
+import IntakeSections from "./IntakeSections";
+import type { FolderApplyResult } from "./FolderIntakePanel";
+import { dedupeSlug, proposeSlug } from "./bulk-slug";
+import type { SheetImportResult } from "./bulk-sheet";
 import {
-  AlertTriangle,
-  CheckCircle2,
-  ChevronDown,
-  ChevronUp,
-  Download,
-  ImagePlus,
-  Loader2,
-  Plus,
-  Send,
-  Trash2,
-  UploadCloud,
-  X,
-  XCircle,
-} from "lucide-react";
-import { Help, Input, Select, Textarea, Toggle } from "@/components/admin/Field";
-import { krw, slugify } from "@/lib/format";
-import type { Category, StorageType } from "@/lib/types";
-import { BTN_GHOST, BTN_PRIMARY } from "../product-ui";
+  MAX_PRODUCTS,
+  emptyDraft,
+  type BulkResult,
+  type DraftIssue,
+  type ProductDraft,
+} from "./bulk-types";
 
-type UploadedImage = { url: string; name?: string };
-
-interface ProductDraft {
-  id: string;
-  name: string;
-  category: string;
-  price: string;
-  stock: string;
-  storage_type: StorageType;
-  origin: string;
-  weight: string;
-  units_per_pack: string;
-  description: string;
-  primaryImages: UploadedImage[];
-  detailImages: UploadedImage[];
-  status: "draft" | "active";
-  expanded: boolean;
-  subtitle: string;
-  sku: string;
-  compare_at_price: string;
-  badges: string;
-  tags: string;
-  nutrition: string;
-  specs: string;
-}
-
-interface BulkResult {
-  row_no: number;
-  name: string | null;
-  slug: string | null;
-  ok: boolean;
-  product_id?: string;
-  warnings: string[];
-  errors: string[];
-}
-
-interface BulkResponse {
-  okCount: number;
-  failedCount: number;
-  results: BulkResult[];
-  error?: string;
-}
-
-const MAX_PRODUCTS = 50;
-const MAX_SIZE_MB = 5;
-
-const SAMPLE_HEADERS = [
-  "상품명",
-  "카테고리",
-  "판매가",
-  "재고",
-  "보관",
-  "원산지",
-  "중량",
-  "구성수량",
-  "상품설명",
-];
-
-function makeId(): string {
-  if (typeof crypto !== "undefined" && "randomUUID" in crypto) return crypto.randomUUID();
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
-
-function emptyDraft(): ProductDraft {
-  return {
-    id: makeId(),
-    name: "",
-    category: "",
-    price: "",
-    stock: "0",
-    storage_type: "room",
-    origin: "국내산",
-    weight: "",
-    units_per_pack: "1",
-    description: "",
-    primaryImages: [],
-    detailImages: [],
-    status: "draft",
-    expanded: false,
-    subtitle: "",
-    sku: "",
-    compare_at_price: "",
-    badges: "",
-    tags: "",
-    nutrition: "",
-    specs: "",
-  };
-}
-
-function normalizeHeader(header: string): string {
-  const key = header.trim().replace(/\s/g, "");
-  const map: Record<string, string> = {
-    상품명: "name",
-    이름: "name",
-    카테고리: "category",
-    판매가: "price",
-    가격: "price",
-    재고: "stock",
-    보관: "storage_type",
-    보관방법: "storage_type",
-    원산지: "origin",
-    중량: "weight",
-    구성수량: "units_per_pack",
-    구성: "units_per_pack",
-    상품설명: "description",
-    설명: "description",
-    한줄소개: "subtitle",
-    SKU: "sku",
-  };
-  return map[key] ?? header.trim();
-}
-
-function normalizeStorage(value: string): StorageType {
-  const trimmed = value.trim().toLowerCase();
-  if (["냉장", "chilled"].includes(trimmed)) return "chilled";
-  if (["냉동", "frozen"].includes(trimmed)) return "frozen";
-  return "room";
-}
-
-async function parseSimpleSheet(file: File): Promise<ProductDraft[]> {
-  const XLSX = await import("xlsx");
-  const workbook = XLSX.read(await file.arrayBuffer(), { type: "array" });
-  const sheet = workbook.Sheets[workbook.SheetNames[0]];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "" });
-
-  return rows
-    .map((raw) => {
-      const normalized: Record<string, string> = {};
-      for (const [header, value] of Object.entries(raw)) {
-        normalized[normalizeHeader(header)] = String(value ?? "").trim();
-      }
-      if (!normalized.name) return null;
-      return {
-        ...emptyDraft(),
-        name: normalized.name,
-        category: normalized.category ?? "",
-        price: normalized.price ?? "",
-        stock: normalized.stock || "0",
-        storage_type: normalizeStorage(normalized.storage_type ?? ""),
-        origin: normalized.origin || "국내산",
-        weight: normalized.weight ?? "",
-        units_per_pack: normalized.units_per_pack || "1",
-        description: normalized.description ?? "",
-        subtitle: normalized.subtitle ?? "",
-        sku: normalized.sku ?? "",
-      };
-    })
-    .filter((row): row is ProductDraft => row != null);
-}
-
-function toList(value: string): string[] {
-  return value
-    .split(/[|,\n]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
-function toApiRow(draft: ProductDraft, index: number) {
-  return {
-    row_no: index + 2,
-    name: draft.name,
-    slug: slugify(draft.name),
-    category: draft.category,
-    subtitle: draft.subtitle,
-    description: draft.description,
-    detail_image_urls: draft.detailImages.map((image) => image.url),
-    price: Number(draft.price),
-    compare_at_price: draft.compare_at_price ? Number(draft.compare_at_price) : undefined,
-    sku: draft.sku || undefined,
-    stock: Number(draft.stock || 0),
-    low_stock_threshold: 10,
-    status: draft.status,
-    storage_type: draft.storage_type,
-    origin: draft.origin,
-    weight: draft.weight,
-    units_per_pack: Number(draft.units_per_pack || 1),
-    primary_image_urls: draft.primaryImages.map((image) => image.url),
-    badges: toList(draft.badges),
-    tags: toList(draft.tags),
-    nutrition: draft.nutrition,
-    specs: draft.specs,
-  };
-}
-
-function resultTone(result?: BulkResult): string {
-  if (!result) return "border-ink-200 bg-cream-50 text-ink-400";
-  if (!result.ok) return "border-signal-red bg-[#f8eee9] text-signal-red";
-  if (result.warnings.length > 0) return "border-signal-amber bg-[#faf3df] text-[#8a650e]";
-  return "border-forest-200 bg-forest-50 text-forest-700";
-}
-
-async function uploadImage(file: File, prefix: string): Promise<UploadedImage> {
-  if (!file.type.startsWith("image/")) throw new Error("이미지 파일만 업로드할 수 있습니다.");
-  if (file.size > MAX_SIZE_MB * 1024 * 1024) {
-    throw new Error(`이미지는 파일당 ${MAX_SIZE_MB}MB 이하로 올려 주세요.`);
-  }
-
-  const form = new FormData();
-  form.append("file", file);
-  form.append("bucket", "products");
-  form.append("prefix", prefix);
-
-  const res = await fetch("/api/admin/upload", { method: "POST", body: form });
-  const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
-  if (!res.ok || !data?.url) throw new Error(data?.error ?? "이미지 업로드에 실패했습니다.");
-  return { url: data.url, name: file.name };
-}
-
-interface DriveImageUploaderProps {
-  label: string;
-  helper: string;
-  value: UploadedImage[];
-  onChange: (next: UploadedImage[]) => void;
-  prefix: string;
-  multiple?: boolean;
-}
-
-function DriveImageUploader({
-  label,
-  helper,
-  value,
-  onChange,
-  prefix,
-  multiple = true,
-}: DriveImageUploaderProps) {
-  const inputRef = useRef<HTMLInputElement | null>(null);
-  const [dragging, setDragging] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function handleFiles(files: FileList | File[]) {
-    const list = Array.from(files);
-    if (list.length === 0) return;
-    setError(null);
-    setUploading(true);
-    try {
-      const selected = multiple ? list : list.slice(0, 1);
-      const uploaded: UploadedImage[] = [];
-      for (const file of selected) {
-        uploaded.push(await uploadImage(file, prefix));
-      }
-      onChange(multiple ? [...value, ...uploaded] : uploaded);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "이미지 업로드에 실패했습니다.");
-    } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
-    }
-  }
-
-  function remove(index: number) {
-    onChange(value.filter((_, i) => i !== index));
-  }
-
-  return (
-    <div>
-      <div className="mb-2 flex items-center justify-between gap-3">
-        <div>
-          <p className="text-sm font-medium text-ink-900">{label}</p>
-          <p className="mt-0.5 text-xs text-ink-400">{helper}</p>
-        </div>
-        <button
-          type="button"
-          onClick={() => inputRef.current?.click()}
-          className="inline-flex shrink-0 items-center gap-1.5 border border-ink-200 px-3 py-2 text-xs text-ink-700 transition-colors hover:bg-cream-100"
-        >
-          <ImagePlus size={15} strokeWidth={1.5} />
-          추가
-        </button>
-      </div>
-
-      <div
-        onDragOver={(event) => {
-          event.preventDefault();
-          setDragging(true);
-        }}
-        onDragLeave={() => setDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setDragging(false);
-          void handleFiles(event.dataTransfer.files);
-        }}
-        className={`min-h-36 border border-dashed p-3 transition-colors ${
-          dragging ? "border-forest-700 bg-forest-50" : "border-ink-300 bg-cream-50"
-        }`}
-      >
-        {value.length === 0 && !uploading ? (
-          <button
-            type="button"
-            onClick={() => inputRef.current?.click()}
-            className="flex min-h-28 w-full flex-col items-center justify-center gap-2 text-ink-400 transition-colors hover:text-forest-700"
-          >
-            <UploadCloud size={24} strokeWidth={1.5} />
-            <span className="text-sm">이미지를 여기에 끌어오거나 선택</span>
-          </button>
-        ) : (
-          <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-6">
-            {value.map((image, index) => (
-              <figure key={`${image.url}-${index}`} className="group relative aspect-square overflow-hidden border border-ink-200 bg-cream-100">
-                <Image src={image.url} alt={image.name ?? label} fill sizes="120px" className="object-cover" />
-                {index === 0 && label.includes("대표") && (
-                  <figcaption className="absolute left-0 top-0 bg-forest-900/85 px-2 py-0.5 text-[10px] text-cream-50">
-                    대표
-                  </figcaption>
-                )}
-                <button
-                  type="button"
-                  onClick={() => remove(index)}
-                  aria-label="이미지 삭제"
-                  className="absolute right-1 top-1 bg-ink-900/60 p-1 text-cream-50 opacity-0 transition-opacity group-hover:opacity-100"
-                >
-                  <X size={14} strokeWidth={1.5} />
-                </button>
-              </figure>
-            ))}
-            {uploading && (
-              <div className="flex aspect-square items-center justify-center border border-ink-200 bg-cream-100">
-                <Loader2 size={20} strokeWidth={1.5} className="animate-spin text-forest-700" />
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      <input
-        ref={inputRef}
-        type="file"
-        accept="image/*"
-        multiple={multiple}
-        className="hidden"
-        onChange={(event) => {
-          if (event.target.files) void handleFiles(event.target.files);
-        }}
-      />
-
-      {error && <Help tone="error">{error}</Help>}
-    </div>
-  );
-}
+import {
+  CHUNK,
+  EMPTY_SUBSCRIBE,
+  STORAGE_KEY,
+  chunk,
+  collectIssues,
+  forgetSavedSnapshot,
+  importMessage,
+  mergeFolderImages,
+  parseSaved,
+  postBulk,
+  readSavedOnce,
+  summarizeResults,
+  toApiRow,
+} from "./bulk-submit";
+import BulkStatusPanels from "./BulkStatusPanels";
+import BulkNotices from "./BulkNotices";
+import BulkConfirmDialogs from "./BulkConfirmDialogs";
+import { BulkHeader, BulkStickyBar } from "./BulkActionBars";
 
 export default function BulkProductImportClient({ categories }: { categories: Category[] }) {
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [drafts, setDrafts] = useState<ProductDraft[]>([emptyDraft()]);
+  /** 50개를 넘겨 이번 차례에 못 담은 몫 */
+  const [queued, setQueued] = useState<ProductDraft[]>([]);
   const [results, setResults] = useState<BulkResult[]>([]);
+  const [issues, setIssues] = useState<DraftIssue[]>([]);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
-  const [showExcel, setShowExcel] = useState(false);
+  const [sent, setSent] = useState<{ done: number; total: number } | null>(null);
+  const [showSheet, setShowSheet] = useState(false);
+  const [showFolder, setShowFolder] = useState(false);
+  const [confirmCreate, setConfirmCreate] = useState(false);
+  const [pendingImport, setPendingImport] = useState<SheetImportResult | null>(null);
+  const [restoreHandled, setRestoreHandled] = useState(false);
 
-  const resultMap = useMemo(() => new Map(results.map((result) => [result.row_no, result])), [results]);
-  const validDrafts = drafts.filter((draft) => draft.name.trim());
+  const savedRaw = useSyncExternalStore(EMPTY_SUBSCRIBE, readSavedOnce, () => null);
+  const restorable = restoreHandled ? null : parseSaved(savedRaw);
+  // "이어서 하시겠어요?" 를 묻고 있는 동안인가. 이 boolean 으로 의존성을 잡아야
+  // 아래 자동 보관 effect 가 렌더마다 다시 돌지 않는다(restorable 은 매 렌더 새 배열이다).
+  const awaitingRestore = restorable !== null;
+
+  const resultMap = useMemo(
+    () => new Map(results.filter((r) => r.client_id).map((r) => [r.client_id as string, r])),
+    [results]
+  );
+  const issuesByDraft = useMemo(() => {
+    const map = new Map<string, DraftIssue[]>();
+    for (const issue of issues) {
+      map.set(issue.draftId, [...(map.get(issue.draftId) ?? []), issue]);
+    }
+    return map;
+  }, [issues]);
+
+  const pending = drafts.filter((d) => !d.registeredId);
+  const registered = drafts.filter((d) => d.registeredId);
+  const imageTotal = drafts.reduce((sum, d) => sum + d.galleryImages.length + d.detailImages.length, 0);
+
+  /* 작성 중 내용 자동 보관 — 새로고침 한 번에 반나절 작업이 사라지던 문제.
+     "이어서 하시겠어요?" 를 묻는 동안에는 쓰지 않는다. 이 effect 는 첫 렌더에도 도는데,
+     그때 빈 카드 하나를 그대로 덮어쓰면 되살리려던 내용이 그 자리에서 사라진다. */
+  useEffect(() => {
+    if (awaitingRestore) return;
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(drafts));
+    } catch {
+      // 저장 공간이 가득 찼거나 차단된 환경 — 자동 보관은 부가 기능이라 조용히 넘어간다
+    }
+  }, [drafts, awaitingRestore]);
+
+  /* 이 화면을 떠나면 되살리기 스냅샷을 버린다 — 다음에 들어올 때 최신 내용을 다시 읽게 한다.
+     버리지 않으면 목록에 다녀온 뒤 옛 내용으로 되돌리자는 물음이 뜬다. */
+  useEffect(() => forgetSavedSnapshot, []);
+
+  /* 저장하지 않은 채 창을 닫으려 하면 붙잡는다 */
+  useEffect(() => {
+    const dirty = drafts.some((d) => !d.registeredId && (d.name.trim() || d.galleryImages.length > 0));
+    if (!dirty) return;
+    const handler = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [drafts]);
+
+  /* ── 카드 조작 ─────────────────────────────────────── */
 
   function patchDraft(id: string, patch: Partial<ProductDraft>) {
-    setDrafts((items) => items.map((item) => (item.id === id ? { ...item, ...patch } : item)));
-    setResults([]);
+    setDrafts((items) =>
+      items.map((item) => {
+        if (item.id !== id) return item;
+        const next = { ...item, ...patch };
+        // 상품명을 고치면 주소 제안도 따라간다 — 단, 사람이 주소를 직접 손봤으면 두 번 다시 건드리지 않는다
+        if (patch.name !== undefined && !next.slugTouched) {
+          const taken = new Set(items.filter((d) => d.id !== id).map((d) => d.slug).filter(Boolean));
+          next.slug = dedupeSlug(proposeSlug(next.name), taken);
+        }
+        return next;
+      })
+    );
+    // 결과 배지는 **그 카드 것만** 지운다. 예전에는 전부 비워서, 실패한 카드를 고치려고
+    // 글자 하나만 쳐도 이미 등록에 성공한 카드들의 표시가 함께 사라졌다.
+    setResults((rs) => rs.filter((r) => r.client_id !== id));
+    setIssues((is) => is.filter((i) => i.draftId !== id));
   }
 
   function addDraft() {
@@ -386,403 +143,250 @@ export default function BulkProductImportClient({ categories }: { categories: Ca
 
   function removeDraft(id: string) {
     setDrafts((items) => (items.length <= 1 ? [emptyDraft()] : items.filter((item) => item.id !== id)));
+    setResults((rs) => rs.filter((r) => r.client_id !== id));
+    setIssues((is) => is.filter((i) => i.draftId !== id));
+  }
+
+  /** 카드 실물을 붙잡아 둔다 — DOM id 에 난수를 담으면 하이드레이션이 어긋나기 때문이다 */
+  const cardRefs = useRef(new Map<string, HTMLElement>());
+
+  /** 요약 목록의 안내를 눌렀을 때 — 카드를 펼치고 그리로 이동한다 */
+  function focusIssue(draftId: string) {
+    setDrafts((items) => items.map((d) => (d.id === draftId ? { ...d, collapsed: false } : d)));
+    cardRefs.current.get(draftId)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
+
+  function setAllCollapsed(collapsed: boolean) {
+    setDrafts((items) => items.map((item) => ({ ...item, collapsed })));
+  }
+
+  /** 등록이 끝난 카드를 화면에서만 치운다 — 상품은 이미 저장돼 있어 사라지지 않는다 */
+  function clearRegistered() {
+    setDrafts((items) => {
+      const left = items.filter((item) => !item.registeredId);
+      // 한 장도 안 남으면 빈 카드를 둔다. 카드가 0개면 아무것도 할 수 없는 화면이 된다
+      return left.length > 0 ? left : [emptyDraft()];
+    });
+    setResults((rs) => rs.filter((r) => drafts.some((d) => d.id === r.client_id && !d.registeredId)));
+  }
+
+  /** 엑셀에서 읽은 초안으로 갈아 끼운다 — 작성 중이던 게 있으면 먼저 확인받는다 */
+  function applyImport(result: SheetImportResult) {
+    setDrafts(result.drafts);
+    setQueued(result.queued);
     setResults([]);
+    setIssues([]);
+    setShowSheet(false);
+    // 엑셀에 없어 기본값으로 채운 것(재고 0 등)까지 한 줄에 담는다 — 문구는 bulk-submit 소관
+    setMessage({ tone: "ok", text: importMessage(result) });
   }
 
-  async function downloadTemplate() {
-    const XLSX = await import("xlsx");
-    const workbook = XLSX.utils.book_new();
-    const sheet = XLSX.utils.aoa_to_sheet([
-      SAMPLE_HEADERS,
-      ["발효곤약면 소면", "noodle", 12900, 100, "상온", "국내산", "200g x 2팩", 2, "쫄깃한 저칼로리 곤약 소면"],
-    ]);
-    XLSX.utils.book_append_sheet(workbook, sheet, "상품 기본정보");
-    XLSX.writeFile(workbook, "daleum-simple-products.xlsx");
+  /** 엑셀 확정 — 작성 중이던 게 있으면 먼저 확인받는다 */
+  function handleSheetConfirm(result: SheetImportResult) {
+    const hasWork = drafts.some((d) => d.name.trim() || d.galleryImages.length > 0);
+    if (hasWork) setPendingImport(result);
+    else applyImport(result);
   }
 
-  async function importExcel(file: File) {
-    setMessage(null);
-    try {
-      const imported = await parseSimpleSheet(file);
-      if (imported.length === 0) {
-        setMessage({ tone: "error", text: "불러올 상품이 없습니다. 첫 줄의 헤더와 상품명을 확인해 주세요." });
-        return;
-      }
-      setDrafts(imported.slice(0, MAX_PRODUCTS));
-      setResults([]);
-      setShowExcel(false);
-      setMessage({ tone: "ok", text: `${imported.length}개 상품 기본 정보를 불러왔습니다. 이미지는 각 상품 카드에서 올려 주세요.` });
-    } catch {
-      setMessage({ tone: "error", text: "엑셀 파일을 읽지 못했습니다. 간편 양식을 다시 받아 작성해 주세요." });
-    } finally {
-      if (fileInputRef.current) fileInputRef.current.value = "";
-    }
+  function loadQueued() {
+    const room = MAX_PRODUCTS - drafts.length;
+    if (room <= 0 || queued.length === 0) return;
+    setDrafts((items) => [...items, ...queued.slice(0, room)]);
+    setQueued((items) => items.slice(room));
   }
 
-  function validateLocal(): string | null {
-    if (validDrafts.length === 0) return "상품명을 입력한 상품이 없습니다.";
-    for (const [index, draft] of validDrafts.entries()) {
-      const label = `${index + 1}번 상품`;
-      if (!draft.name.trim()) return `${label}의 상품명을 입력해 주세요.`;
-      if (!draft.price || !Number.isInteger(Number(draft.price))) return `${label}의 판매가를 숫자로 입력해 주세요.`;
-      if (!Number.isInteger(Number(draft.stock || 0))) return `${label}의 재고를 숫자로 입력해 주세요.`;
-      if (draft.primaryImages.length === 0) return `${label}에 대표 이미지를 1장 이상 올려 주세요.`;
-    }
-    return null;
+  /** 폴더에서 올린 사진을 각 카드에 붙인다 */
+  function applyFolder(applied: FolderApplyResult[], noteCount: number, failures: string[]) {
+    const { next, added, dropped } = mergeFolderImages(drafts, applied, MAX_GALLERY_IMAGES);
+    setDrafts(next);
+    setShowFolder(false);
+    setMessage({
+      tone: failures.length > 0 ? "error" : "ok",
+      text:
+        `사진 ${added}장을 상품 ${applied.length}개에 넣었습니다.` +
+        (noteCount > 0 ? ` ${noteCount}장은 알맞은 칸으로 옮겨 두었으니 카드에서 확인해 주세요.` : "") +
+        (dropped > 0
+          ? ` 상품 사진은 ${MAX_GALLERY_IMAGES}장까지 들어가 ${dropped}장은 담지 못했습니다. 상세페이지에 넣을 사진이면 카드에서 아래 칸에 올려 주세요.`
+          : "") +
+        (failures.length > 0 ? ` ${failures.length}장은 올리지 못했습니다: ${failures[0]}` : ""),
+    });
   }
 
-  async function submit(mode: "validate" | "create") {
-    const localError = validateLocal();
-    if (localError) {
-      setMessage({ tone: "error", text: localError });
+  /* ── 전송 ─────────────────────────────────────────── */
+
+  async function send(mode: "validate" | "create") {
+    const found = collectIssues(pending);
+    setIssues(found);
+    if (found.length > 0) {
+      setMessage({ tone: "error", text: `확인이 필요한 항목이 ${found.length}개 있습니다.` });
       return;
     }
-    if (mode === "create" && !window.confirm(`${validDrafts.length}개 상품을 등록할까요?`)) return;
+    if (pending.length === 0) {
+      setMessage({ tone: "error", text: "등록할 상품이 없습니다." });
+      return;
+    }
 
     setBusy(true);
     setMessage(null);
+    const collected: BulkResult[] = [];
+
     try {
-      const res = await fetch("/api/admin/products/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          mode,
-          products: validDrafts.map(toApiRow),
-        }),
-      });
-      const data = (await res.json().catch(() => null)) as BulkResponse | null;
-      if (!res.ok || !data) throw new Error(data?.error ?? "요청에 실패했습니다.");
-      setResults(data.results);
-      setMessage({
-        tone: data.failedCount === 0 ? "ok" : "error",
-        text:
-          mode === "create"
-            ? `등록 ${krw(data.okCount)}건, 실패 ${krw(data.failedCount)}건`
-            : `검증 통과 ${krw(data.okCount)}건, 확인 필요 ${krw(data.failedCount)}건`,
-      });
+      const groups = mode === "create" ? chunk(pending, CHUNK) : [pending];
+      let done = 0;
+      if (mode === "create") setSent({ done: 0, total: pending.length });
+
+      for (const group of groups) {
+        const data = await postBulk(mode, group.map(toApiRow));
+        collected.push(...data.results);
+        done += group.length;
+        if (mode === "create") setSent({ done, total: pending.length });
+      }
+
+      setResults(collected);
+
+      if (mode === "create") {
+        // 성공한 카드는 잠근다 — 다시 눌러도 중복으로 들어가지 않게
+        setDrafts((items) =>
+          items.map((item) => {
+            const hit = collected.find((r) => r.client_id === item.id);
+            if (!hit || (!hit.ok && !hit.skipped)) return item;
+            return {
+              ...item,
+              registeredId: hit.product_id ?? item.registeredId,
+              collapsed: true,
+            };
+          })
+        );
+      }
+
+      setMessage(summarizeResults(collected, mode));
     } catch (e) {
-      setMessage({ tone: "error", text: e instanceof Error ? e.message : "요청에 실패했습니다." });
+      setMessage({ tone: "error", text: e instanceof Error ? e.message : "요청을 처리하지 못했습니다." });
+      if (collected.length > 0) setResults(collected);
     } finally {
       setBusy(false);
+      setSent(null);
     }
   }
 
+  /**
+   * 등록 확인 대화상자를 열기 전에 **먼저 검증한다.**
+   *
+   * 예전에는 버튼을 누르는 즉시 "'○○' 외 29개를 등록합니다" 가 떴다. 그런데 그 뒤에 도는
+   * 검증에서 절반이 걸리면 약속한 수는 처음부터 지킬 수 없는 수였다. 확인창은 사람이
+   * 마지막으로 무게를 재는 자리이므로, 거기 적히는 수는 **확정값**이어야 한다.
+   */
+  function requestCreate() {
+    const found = collectIssues(pending);
+    setIssues(found);
+    if (found.length > 0) {
+      setMessage({
+        tone: "error",
+        text: `확인이 필요한 항목이 ${found.length}개 있습니다. 위 목록에서 눌러 고친 뒤 다시 등록해 주세요.`,
+      });
+      return;
+    }
+    if (pending.length === 0) {
+      setMessage({ tone: "error", text: "등록할 상품이 없습니다." });
+      return;
+    }
+    setMessage(null);
+    setConfirmCreate(true);
+  }
+
+  const readyCount = pending.length;
+  // 이미 있어 건너뛸 행은 '바로 등록할 수 있는 상품' 이 아니다
+  const passedCount = results.filter((r) => r.ok && !r.skipped).length;
+
   return (
     <div>
-      <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <Link href="/admin/products" className="text-xs text-ink-400 transition-colors hover:text-forest-700">
-            상품 목록으로
-          </Link>
-          <h1 className="mt-1 text-xl font-semibold text-ink-900">상품 일괄 등록</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-relaxed text-ink-500">
-            상품을 카드처럼 추가하고 이미지는 드라이브처럼 끌어넣어 등록합니다.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <button type="button" onClick={addDraft} className={`${BTN_GHOST} inline-flex items-center gap-2`}>
-            <Plus size={16} strokeWidth={1.5} />
-            상품 추가
-          </button>
-          <button
-            type="button"
-            onClick={() => void submit("validate")}
-            disabled={busy}
-            className={`${BTN_GHOST} inline-flex items-center gap-2`}
-          >
-            <CheckCircle2 size={16} strokeWidth={1.5} />
-            검증
-          </button>
-          <button
-            type="button"
-            onClick={() => void submit("create")}
-            disabled={busy}
-            className={`${BTN_PRIMARY} inline-flex items-center gap-2`}
-          >
-            {busy ? <Loader2 size={16} strokeWidth={1.5} className="animate-spin" /> : <Send size={16} strokeWidth={1.5} />}
-            등록
-          </button>
-        </div>
+      <BulkHeader
+        readyCount={readyCount}
+        registeredCount={registered.length}
+        draftCount={drafts.length}
+        busy={busy}
+        onAddDraft={addDraft}
+        onValidate={() => void send("validate")}
+        onRequestCreate={requestCreate}
+      />
+
+      <BulkNotices
+        restorable={restorable}
+        onRestore={(items) => {
+          setDrafts(items);
+          setRestoreHandled(true);
+        }}
+        onDiscardRestore={() => setRestoreHandled(true)}
+        message={message}
+        sent={sent}
+      />
+
+      <IntakeSections
+        categories={categories}
+        drafts={drafts}
+        showSheet={showSheet}
+        showFolder={showFolder}
+        setShowSheet={setShowSheet}
+        setShowFolder={setShowFolder}
+        onSheetConfirm={handleSheetConfirm}
+        onFolderApply={applyFolder}
+      />
+
+      <BulkStatusPanels
+        readyCount={readyCount}
+        imageTotal={imageTotal}
+        passedCount={passedCount}
+        issues={issues}
+        queuedCount={queued.length}
+        draftCount={drafts.length}
+        registeredCount={registered.length}
+        onFocusIssue={focusIssue}
+        onLoadQueued={loadQueued}
+        onCollapseAll={setAllCollapsed}
+        onClearRegistered={clearRegistered}
+      />
+
+      <div className="space-y-4">
+        {drafts.map((draft, index) => (
+          <DraftCard
+            key={draft.id}
+            draft={draft}
+            index={index}
+            categories={categories}
+            result={resultMap.get(draft.id)}
+            issues={issuesByDraft.get(draft.id) ?? []}
+            onPatch={(patch) => patchDraft(draft.id, patch)}
+            onRemove={() => removeDraft(draft.id)}
+            sectionRef={(el) => {
+              if (el) cardRefs.current.set(draft.id, el);
+              else cardRefs.current.delete(draft.id);
+            }}
+          />
+        ))}
       </div>
 
-      {message && (
-        <p
-          role="status"
-          className={`mb-4 border px-4 py-3 text-sm ${
-            message.tone === "ok"
-              ? "border-forest-200 bg-forest-50 text-forest-700"
-              : "border-ink-200 bg-cream-100 text-signal-red"
-          }`}
-        >
-          {message.text}
-        </p>
-      )}
+      <BulkStickyBar
+        readyCount={readyCount}
+        registeredCount={registered.length}
+        busy={busy}
+        onValidate={() => void send("validate")}
+        onRequestCreate={requestCreate}
+      />
 
-      <section className="mb-5 border border-ink-200 bg-cream-50">
-        <button
-          type="button"
-          onClick={() => setShowExcel((open) => !open)}
-          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
-        >
-          <span>
-            <span className="block text-sm font-semibold text-ink-900">엑셀로 기본 정보 불러오기</span>
-            <span className="mt-0.5 block text-xs text-ink-400">이미지는 엑셀에 넣지 않고, 불러온 뒤 상품 카드에서 업로드합니다.</span>
-          </span>
-          {showExcel ? <ChevronUp size={18} strokeWidth={1.5} /> : <ChevronDown size={18} strokeWidth={1.5} />}
-        </button>
-        {showExcel && (
-          <div className="flex flex-wrap items-center gap-2 border-t border-ink-100 px-4 py-4">
-            <button type="button" onClick={downloadTemplate} className={`${BTN_GHOST} inline-flex items-center gap-2`}>
-              <Download size={16} strokeWidth={1.5} />
-              간편 양식 받기
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls,.csv,.tsv"
-              className="hidden"
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void importExcel(file);
-              }}
-            />
-            <button type="button" onClick={() => fileInputRef.current?.click()} className={`${BTN_PRIMARY} inline-flex items-center gap-2`}>
-              <UploadCloud size={16} strokeWidth={1.5} />
-              작성한 엑셀 불러오기
-            </button>
-          </div>
-        )}
-      </section>
-
-      <div className="mb-4 grid grid-cols-3 gap-3">
-        <div className="border border-ink-200 bg-cream-50 p-4">
-          <p className="label-caps text-ink-400">Products</p>
-          <p className="krw mt-2 text-2xl font-semibold text-ink-900">{krw(validDrafts.length)}</p>
-        </div>
-        <div className="border border-ink-200 bg-cream-50 p-4">
-          <p className="label-caps text-ink-400">Images</p>
-          <p className="krw mt-2 text-2xl font-semibold text-ink-900">
-            {krw(drafts.reduce((sum, draft) => sum + draft.primaryImages.length + draft.detailImages.length, 0))}
-          </p>
-        </div>
-        <div className="border border-ink-200 bg-cream-50 p-4">
-          <p className="label-caps text-ink-400">Passed</p>
-          <p className="krw mt-2 text-2xl font-semibold text-forest-700">
-            {krw(results.filter((result) => result.ok).length)}
-          </p>
-        </div>
-      </div>
-
-      <div className="space-y-5">
-        {drafts.map((draft, index) => {
-          const result = resultMap.get(index + 2);
-          return (
-            <section key={draft.id} className="border border-ink-200 bg-cream-50">
-              <div className="flex flex-wrap items-start justify-between gap-3 border-b border-ink-100 px-4 py-3">
-                <div>
-                  <p className="label-caps text-ink-400">Product {index + 1}</p>
-                  <h2 className="mt-1 text-base font-semibold text-ink-900">
-                    {draft.name.trim() || "새 상품"}
-                  </h2>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className={`inline-flex items-center gap-1 border px-2.5 py-1 text-xs ${resultTone(result)}`}>
-                    {result ? (
-                      result.ok ? (
-                        result.warnings.length > 0 ? (
-                          <AlertTriangle size={13} strokeWidth={1.5} />
-                        ) : (
-                          <CheckCircle2 size={13} strokeWidth={1.5} />
-                        )
-                      ) : (
-                        <XCircle size={13} strokeWidth={1.5} />
-                      )
-                    ) : (
-                      <AlertTriangle size={13} strokeWidth={1.5} />
-                    )}
-                    {result ? (result.ok ? "통과" : "확인 필요") : "미검증"}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => removeDraft(draft.id)}
-                    aria-label="상품 삭제"
-                    className="p-2 text-ink-400 transition-colors hover:text-signal-red"
-                  >
-                    <Trash2 size={17} strokeWidth={1.5} />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid gap-5 p-4 xl:grid-cols-[minmax(0,1fr)_minmax(30rem,0.9fr)]">
-                <div className="space-y-4">
-                  <div className="grid gap-3 md:grid-cols-2">
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">상품명 *</span>
-                      <Input value={draft.name} onChange={(event) => patchDraft(draft.id, { name: event.target.value })} />
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">카테고리</span>
-                      <Select value={draft.category} onChange={(event) => patchDraft(draft.id, { category: event.target.value })}>
-                        <option value="">미분류</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </Select>
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">판매가 *</span>
-                      <Input inputMode="numeric" value={draft.price} onChange={(event) => patchDraft(draft.id, { price: event.target.value })} />
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">초기 재고 *</span>
-                      <Input inputMode="numeric" value={draft.stock} onChange={(event) => patchDraft(draft.id, { stock: event.target.value })} />
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">보관 방법</span>
-                      <Select value={draft.storage_type} onChange={(event) => patchDraft(draft.id, { storage_type: event.target.value as StorageType })}>
-                        <option value="room">상온</option>
-                        <option value="chilled">냉장</option>
-                        <option value="frozen">냉동</option>
-                      </Select>
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">원산지</span>
-                      <Input value={draft.origin} onChange={(event) => patchDraft(draft.id, { origin: event.target.value })} />
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">중량</span>
-                      <Input value={draft.weight} onChange={(event) => patchDraft(draft.id, { weight: event.target.value })} placeholder="200g x 2팩" />
-                    </label>
-                    <label>
-                      <span className="mb-1.5 block text-[13px] font-medium text-ink-700">구성 수량</span>
-                      <Input inputMode="numeric" value={draft.units_per_pack} onChange={(event) => patchDraft(draft.id, { units_per_pack: event.target.value })} />
-                    </label>
-                  </div>
-
-                  <label className="block">
-                    <span className="mb-1.5 block text-[13px] font-medium text-ink-700">상품 설명</span>
-                    <Textarea
-                      rows={5}
-                      value={draft.description}
-                      onChange={(event) => patchDraft(draft.id, { description: event.target.value })}
-                      placeholder="상품 특징, 조리법, 맛과 식감 등을 자유롭게 적어 주세요."
-                    />
-                  </label>
-
-                  <button
-                    type="button"
-                    onClick={() => patchDraft(draft.id, { expanded: !draft.expanded })}
-                    className="inline-flex items-center gap-1.5 text-sm text-ink-500 transition-colors hover:text-forest-700"
-                  >
-                    {draft.expanded ? <ChevronUp size={16} strokeWidth={1.5} /> : <ChevronDown size={16} strokeWidth={1.5} />}
-                    추가 정보
-                  </button>
-
-                  {draft.expanded && (
-                    <div className="grid gap-3 border-t border-ink-100 pt-4 md:grid-cols-2">
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">한줄 소개</span>
-                        <Input value={draft.subtitle} onChange={(event) => patchDraft(draft.id, { subtitle: event.target.value })} />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">SKU</span>
-                        <Input value={draft.sku} onChange={(event) => patchDraft(draft.id, { sku: event.target.value })} />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">정가</span>
-                        <Input inputMode="numeric" value={draft.compare_at_price} onChange={(event) => patchDraft(draft.id, { compare_at_price: event.target.value })} />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">배지</span>
-                        <Input value={draft.badges} onChange={(event) => patchDraft(draft.id, { badges: event.target.value })} placeholder="NEW, BEST" />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">태그</span>
-                        <Input value={draft.tags} onChange={(event) => patchDraft(draft.id, { tags: event.target.value })} placeholder="저칼로리, 비건" />
-                      </label>
-                      <label>
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">영양 정보</span>
-                        <Input value={draft.nutrition} onChange={(event) => patchDraft(draft.id, { nutrition: event.target.value })} placeholder="열량=15kcal|나트륨=10mg" />
-                      </label>
-                      <label className="md:col-span-2">
-                        <span className="mb-1.5 block text-[13px] font-medium text-ink-700">상품 스펙/식품 표시사항</span>
-                        <Textarea
-                          rows={3}
-                          value={draft.specs}
-                          onChange={(event) => patchDraft(draft.id, { specs: event.target.value })}
-                          placeholder="식품유형=곤약가공품|소비기한=제조일로부터 12개월|보관방법=직사광선을 피해 상온 보관"
-                        />
-                      </label>
-                    </div>
-                  )}
-
-                  <Toggle
-                    checked={draft.status === "active"}
-                    onChange={(checked) => patchDraft(draft.id, { status: checked ? "active" : "draft" })}
-                    label="검증 후 바로 판매중으로 등록"
-                  />
-                </div>
-
-                <div className="space-y-5">
-                  <DriveImageUploader
-                    label="대표/상품 이미지"
-                    helper="첫 이미지가 대표 이미지입니다."
-                    value={draft.primaryImages}
-                    onChange={(images) => patchDraft(draft.id, { primaryImages: images })}
-                    prefix={`bulk/${draft.id}/gallery`}
-                  />
-                  <DriveImageUploader
-                    label="상세페이지 이미지"
-                    helper="상세 설명 아래에 순서대로 붙습니다."
-                    value={draft.detailImages}
-                    onChange={(images) => patchDraft(draft.id, { detailImages: images })}
-                    prefix={`bulk/${draft.id}/detail`}
-                  />
-                </div>
-              </div>
-
-              {result && [...result.errors, ...result.warnings].length > 0 && (
-                <div className="border-t border-ink-100 px-4 py-3">
-                  {result.errors.map((error) => (
-                    <p key={error} className="text-sm text-signal-red">
-                      {error}
-                    </p>
-                  ))}
-                  {result.warnings.map((warning) => (
-                    <p key={warning} className="text-sm text-[#8a650e]">
-                      {warning}
-                    </p>
-                  ))}
-                  {result.product_id && (
-                    <Link href={`/admin/products/${result.product_id}`} className="mt-2 inline-block text-sm text-forest-700 hover:underline">
-                      등록 상품 보기
-                    </Link>
-                  )}
-                </div>
-              )}
-            </section>
-          );
-        })}
-      </div>
-
-      <div className="sticky bottom-0 z-20 mt-8 flex flex-col gap-3 border-t border-ink-200 bg-cream-50/95 py-4 backdrop-blur-sm sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-ink-500">
-          상품 <span className="krw font-medium text-ink-900">{krw(validDrafts.length)}</span>개 준비됨
-        </p>
-        <div className="flex gap-2">
-          <button type="button" onClick={addDraft} className={BTN_GHOST}>
-            상품 추가
-          </button>
-          <button type="button" onClick={() => void submit("validate")} disabled={busy} className={BTN_GHOST}>
-            검증
-          </button>
-          <button type="button" onClick={() => void submit("create")} disabled={busy} className={BTN_PRIMARY}>
-            {busy ? "처리 중" : "일괄 등록"}
-          </button>
-        </div>
-      </div>
+      <BulkConfirmDialogs
+        pending={pending}
+        confirmCreate={confirmCreate}
+        onCloseCreate={() => setConfirmCreate(false)}
+        onConfirmCreate={() => void send("create")}
+        importPending={pendingImport != null}
+        onCloseImport={() => setPendingImport(null)}
+        onConfirmImport={() => {
+          if (pendingImport) applyImport(pendingImport);
+          setPendingImport(null);
+        }}
+        draftCount={drafts.length}
+        imageTotal={imageTotal}
+      />
     </div>
   );
 }

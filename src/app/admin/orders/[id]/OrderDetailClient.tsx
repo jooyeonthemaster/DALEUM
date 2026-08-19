@@ -1,91 +1,53 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import Image from "next/image";
 import { ArrowLeft } from "lucide-react";
 import StatusChip from "@/components/admin/StatusChip";
-import { Select, Textarea, Help } from "@/components/admin/Field";
 import TrackingSection from "./TrackingSection";
 import RefundSection from "./RefundSection";
-import { krw, formatDateTime, formatPhone } from "@/lib/format";
-import {
-  ADMIN_SETTABLE_STATUSES,
-  ORDER_STATUS_LABELS,
-  PAYMENT_STATUS_LABELS,
-} from "@/lib/constants";
+import StatusFlowSection from "./StatusFlowSection";
+import OrderSummaryPanel from "./OrderSummaryPanel";
+import ShippingEditModal from "./ShippingEditModal";
+import { OrderTimeline, OrderMemoSection } from "./OrderTimeline";
+import { formatDateTime } from "@/lib/format";
+import type { OrderStatus, RecipientInfo } from "@/lib/types";
 import type {
-  OrderStatus,
-  OrderItem,
-  Payment,
-  PaymentStatus,
-  Shipment,
-  OrdererInfo,
-  RecipientInfo,
-} from "@/lib/types";
+  AdminOrderDetail,
+  CustomerLink,
+  OrderEventView,
+  RefundLedgerView,
+} from "./order-detail-types";
 
 /* ============================================================
-   관리자 주문 상세 — 스냅샷 / 결제 / 배송지 / 상태 변경 /
-   운송장 / 관리자 메모(자동저장) / 환불
+   관리자 주문 상세 — 주문 내용 / 진행 단계 / 운송장 / 처리 이력 / 상시 메모 / 환불
+
+   화면에 나가는 값은 전부 서버가 사람 말로 다듬어 내려 준 것만 쓴다.
+   (예전에는 관리자 메모 칸에 UTC 시각과 영문 DB 오류, 상품 식별자가 그대로 찍혔다)
    ============================================================ */
 
-export interface AdminOrderDetail {
-  id: string;
-  order_no: string;
-  status: OrderStatus;
-  created_at: string;
-  paid_at: string | null;
-  cancelled_at: string | null;
-  cancel_reason: string | null;
-  subtotal: number;
-  discount_total: number;
-  shipping_fee: number;
-  total: number;
-  coupon_discount: number;
-  vip_code: string | null;
-  vip_campaign_id: string | null;
-  admin_memo: string | null;
-  user_id: string | null;
-  orderer: OrdererInfo;
-  recipient: RecipientInfo;
-  order_items: OrderItem[];
-  payments: Payment[];
-  shipments: Shipment[];
-}
-
-interface CustomerLink {
-  id: string;
-  name: string | null;
-  email: string | null;
-}
-
-function Section({
-  title,
-  action,
-  children,
-}: {
-  title: string;
-  action?: React.ReactNode;
-  children: React.ReactNode;
-}) {
-  return (
-    <section className="border border-ink-200 bg-cream-50">
-      <div className="flex items-center justify-between gap-3 px-5 py-3.5 hairline-b">
-        <h2 className="label-caps text-ink-400">{title}</h2>
-        {action}
-      </div>
-      <div className="p-5">{children}</div>
-    </section>
-  );
+interface DetailResponse {
+  order: AdminOrderDetail;
+  customer: CustomerLink | null;
+  memo: string;
+  events: OrderEventView[];
+  refund: RefundLedgerView | null;
+  memoKinds: Record<string, string>;
 }
 
 export default function OrderDetailClient({ orderId }: { orderId: string }) {
   const [order, setOrder] = useState<AdminOrderDetail | null>(null);
   const [customer, setCustomer] = useState<CustomerLink | null>(null);
+  const [events, setEvents] = useState<OrderEventView[]>([]);
+  const [refund, setRefund] = useState<RefundLedgerView | null>(null);
+  const [memoKinds, setMemoKinds] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
+  const [statusBusy, setStatusBusy] = useState(false);
   const [statusError, setStatusError] = useState<string | null>(null);
+  const [shippingOpen, setShippingOpen] = useState(false);
+
   const [memo, setMemo] = useState("");
   const [memoStatus, setMemoStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const memoTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,11 +58,14 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
     (async () => {
       try {
         const res = await fetch(`/api/admin/orders/${orderId}`, { signal: controller.signal });
-        const json = await res.json();
+        const json = (await res.json()) as DetailResponse & { error?: string };
         if (!res.ok) throw new Error(json.error ?? "주문을 불러오지 못했습니다.");
-        setOrder(json.order as AdminOrderDetail);
+        setOrder(json.order);
         setCustomer(json.customer ?? null);
-        setMemo((json.order as AdminOrderDetail).admin_memo ?? "");
+        setEvents(json.events ?? []);
+        setRefund(json.refund ?? null);
+        setMemoKinds(json.memoKinds ?? {});
+        setMemo(json.memo ?? "");
       } catch (e) {
         if ((e as Error).name === "AbortError") return;
         setLoadError(e instanceof Error ? e.message : "주문을 불러오지 못했습니다.");
@@ -111,44 +76,74 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
     return () => controller.abort();
   }, [orderId]);
 
-  // ---------- 상태 변경 ----------
-  async function changeStatus(next: OrderStatus) {
-    if (!order || next === order.status) return;
-    const prev = order.status;
-    setOrder({ ...order, status: next });
-    setStatusError(null);
-    try {
+  /**
+   * 이력만 다시 읽어 온다.
+   * 환불·운송장은 PATCH 가 아닌 자기 라우트로 나가서 서버가 이력을 새로 적는다 —
+   * 화면이 그것을 모르면 방금 한 일이 '처리 이력' 에 안 보여 "기록이 안 남았나" 싶게 된다.
+   */
+  const refreshEvents = useCallback(() => {
+    fetch(`/api/admin/orders/${orderId}`)
+      .then((r) => r.json())
+      .then((j) => {
+        if (Array.isArray(j.events)) setEvents(j.events as OrderEventView[]);
+      })
+      .catch(() => undefined);
+  }, [orderId]);
+
+  /** PATCH 공통 — 서버가 다시 계산해 준 이력/잔액으로 화면을 맞춘다 */
+  const patch = useCallback(
+    async (body: Record<string, unknown>) => {
       const res = await fetch(`/api/admin/orders/${orderId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: next }),
+        body: JSON.stringify(body),
       });
       const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "상태를 변경하지 못했습니다.");
+      if (!res.ok) throw new Error(json.error ?? "저장하지 못했습니다.");
+      if (Array.isArray(json.events)) setEvents(json.events as OrderEventView[]);
+      if (json.refund) setRefund(json.refund as RefundLedgerView);
+      return json as { order?: Partial<AdminOrderDetail> };
+    },
+    [orderId]
+  );
+
+  // ---------- 상태 한 단계 이동 ----------
+  async function changeStatus(next: OrderStatus) {
+    if (!order || statusBusy) return;
+    setStatusBusy(true);
+    setStatusError(null);
+    try {
+      await patch({ status: next });
+      setOrder((o) => (o ? { ...o, status: next } : o));
     } catch (e) {
-      setOrder((o) => (o ? { ...o, status: prev } : o));
       setStatusError(e instanceof Error ? e.message : "상태를 변경하지 못했습니다.");
+    } finally {
+      setStatusBusy(false);
     }
   }
 
-  // ---------- 관리자 메모 자동저장 ----------
+  // ---------- 배송지 수정 ----------
+  async function saveRecipient(next: RecipientInfo) {
+    await patch({ recipient: next });
+    setOrder((o) => (o ? { ...o, recipient: next } : o));
+  }
+
+  // ---------- 이력 남기기 ----------
+  async function addEvent(kind: string, body: string) {
+    await patch({ event: { kind, body } });
+  }
+
+  // ---------- 상시 메모 자동저장 ----------
   function onMemoChange(value: string) {
     setMemo(value);
     setMemoStatus("idle");
     if (memoTimer.current) clearTimeout(memoTimer.current);
-    memoTimer.current = setTimeout(async () => {
+    memoTimer.current = setTimeout(() => {
       setMemoStatus("saving");
-      try {
-        const res = await fetch(`/api/admin/orders/${orderId}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ adminMemo: value }),
-        });
-        if (!res.ok) throw new Error();
-        setMemoStatus("saved");
-      } catch {
-        setMemoStatus("error");
-      }
+      // 자유 메모만 보낸다 — 이력은 서버가 들고 있다가 그대로 다시 붙인다
+      patch({ adminMemo: value })
+        .then(() => setMemoStatus("saved"))
+        .catch(() => setMemoStatus("error"));
     }, 900);
   }
 
@@ -180,8 +175,6 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
     );
   }
 
-  const locked = ["cancelled", "refunded"].includes(order.status);
-  const settable = ADMIN_SETTABLE_STATUSES.includes(order.status);
   const shipment = order.shipments?.[0] ?? null;
 
   return (
@@ -201,272 +194,76 @@ export default function OrderDetailClient({ orderId }: { orderId: string }) {
       </div>
 
       <div className="grid items-start gap-6 lg:grid-cols-[1fr_minmax(20rem,24rem)]">
-        {/* ================= 좌측 — 주문 내용 ================= */}
-        <div className="space-y-6">
-          {/* 상품 라인 */}
-          <Section title="주문 상품">
-            <ul className="divide-y divide-ink-100">
-              {order.order_items.map((item) => (
-                <li key={item.id} className="flex items-center gap-4 py-3.5 first:pt-0 last:pb-0">
-                  {item.image_url ? (
-                    <Image
-                      src={item.image_url}
-                      alt={item.name_snapshot}
-                      width={56}
-                      height={70}
-                      sizes="56px"
-                      className="h-[70px] w-14 shrink-0 bg-cream-100 object-cover"
-                    />
-                  ) : (
-                    <div className="h-[70px] w-14 shrink-0 bg-cream-100" />
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-ink-900">
-                      {item.name_snapshot}
-                    </p>
-                    {item.option_snapshot && (
-                      <p className="mt-0.5 text-xs text-ink-400">{item.option_snapshot}</p>
-                    )}
-                    <p className="krw mt-1 text-xs text-ink-500">
-                      {krw(item.unit_price)}원 × {item.qty}
-                      {item.unit_price < item.original_price && (
-                        <span className="ml-2 text-ink-300 line-through">
-                          {krw(item.original_price)}원
-                        </span>
-                      )}
-                    </p>
-                  </div>
-                  <p className="krw shrink-0 text-sm font-medium text-ink-900">
-                    {krw(item.unit_price * item.qty)}원
-                  </p>
-                </li>
-              ))}
-            </ul>
-
-            {/* 금액 요약 */}
-            <dl className="mt-5 space-y-2 border-t border-ink-200 pt-4 text-sm">
-              <div className="flex justify-between text-ink-600">
-                <dt>상품 합계</dt>
-                <dd className="krw">{krw(order.subtotal)}원</dd>
-              </div>
-              {order.discount_total > 0 && (
-                <div className="flex justify-between text-ink-600">
-                  <dt>
-                    할인
-                    {order.coupon_discount > 0 && (
-                      <span className="ml-1.5 text-xs text-ink-400">
-                        (쿠폰 {krw(order.coupon_discount)}원 포함)
-                      </span>
-                    )}
-                  </dt>
-                  <dd className="krw text-forest-700">−{krw(order.discount_total)}원</dd>
-                </div>
-              )}
-              <div className="flex justify-between text-ink-600">
-                <dt>배송비</dt>
-                <dd className="krw">{order.shipping_fee > 0 ? `${krw(order.shipping_fee)}원` : "무료"}</dd>
-              </div>
-              <div className="flex justify-between border-t border-ink-200 pt-2.5 text-base font-semibold text-ink-900">
-                <dt>총 결제 금액</dt>
-                <dd className="krw">{krw(order.total)}원</dd>
-              </div>
-            </dl>
-
-            {(order.vip_code || order.vip_campaign_id) && (
-              <p className="mt-3 text-xs text-brass-700">
-                {order.vip_campaign_id ? "VIP 캠페인 경유 주문" : "VIP 코드 주문"}
-                {order.vip_code && <span className="krw ml-1.5">코드 {order.vip_code}</span>}
-              </p>
-            )}
-          </Section>
-
-          {/* 결제 정보 */}
-          <Section title="결제 정보">
-            {order.payments.length === 0 ? (
-              <p className="text-sm text-ink-400">
-                결제 내역이 없습니다{order.status === "pending" ? " (결제 대기 주문)" : ""}.
-              </p>
-            ) : (
-              <ul className="divide-y divide-ink-100">
-                {order.payments.map((p) => (
-                  <li key={p.id} className="py-3 text-sm first:pt-0 last:pb-0">
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="font-medium text-ink-900">{p.method ?? "토스페이먼츠"}</span>
-                      <span className="text-xs text-ink-500">
-                        {PAYMENT_STATUS_LABELS[p.status as PaymentStatus] ?? p.status}
-                      </span>
-                    </div>
-                    <div className="mt-1.5 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-500">
-                      <span className="krw">
-                        {krw(p.amount)}원
-                        {p.approved_at && ` · ${formatDateTime(p.approved_at)} 승인`}
-                      </span>
-                      {p.receipt_url && (
-                        <a
-                          href={p.receipt_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="link-line text-forest-700"
-                        >
-                          영수증 보기
-                        </a>
-                      )}
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-            {order.cancel_reason && (
-              <p className="mt-3 border-t border-ink-100 pt-3 text-xs text-signal-red">
-                취소/환불 사유: {order.cancel_reason}
-                {order.cancelled_at && (
-                  <span className="krw ml-1.5 text-ink-400">
-                    ({formatDateTime(order.cancelled_at)})
-                  </span>
-                )}
-              </p>
-            )}
-          </Section>
-
-          {/* 배송지 / 주문자 */}
-          <Section title="배송지 · 주문자">
-            <div className="grid gap-6 sm:grid-cols-2">
-              <div>
-                <p className="mb-2 text-xs font-medium text-ink-400">받는 분</p>
-                <p className="text-sm font-medium text-ink-900">{order.recipient?.name}</p>
-                <p className="krw mt-0.5 text-sm text-ink-600">
-                  {formatPhone(order.recipient?.phone ?? "")}
-                </p>
-                <p className="mt-2 text-sm leading-relaxed text-ink-600">
-                  ({order.recipient?.postcode}) {order.recipient?.address1}
-                  {order.recipient?.address2 && ` ${order.recipient.address2}`}
-                </p>
-                {order.recipient?.memo && (
-                  <p className="mt-2 text-xs text-ink-500">배송 메모: {order.recipient.memo}</p>
-                )}
-              </div>
-              <div>
-                <p className="mb-2 text-xs font-medium text-ink-400">주문자</p>
-                <p className="text-sm font-medium text-ink-900">{order.orderer?.name}</p>
-                <p className="krw mt-0.5 text-sm text-ink-600">
-                  {formatPhone(order.orderer?.phone ?? "")}
-                </p>
-                {order.orderer?.email && (
-                  <p className="mt-0.5 text-sm text-ink-600">{order.orderer.email}</p>
-                )}
-                <p className="mt-2 text-xs text-ink-400">
-                  {customer ? (
-                    <Link
-                      href={`/admin/customers/${customer.id}`}
-                      className="link-line text-forest-700"
-                    >
-                      고객 상세 보기
-                    </Link>
-                  ) : (
-                    "비회원 주문"
-                  )}
-                </p>
-              </div>
-            </div>
-          </Section>
-        </div>
+        <OrderSummaryPanel
+          order={order}
+          customer={customer}
+          onEditShipping={() => setShippingOpen(true)}
+        />
 
         {/* ================= 우측 — 운영 패널 ================= */}
         <div className="space-y-6">
-          {/* 상태 변경 */}
-          <Section title="주문 상태">
-            <Select
-              value={order.status}
-              disabled={locked}
-              onChange={(e) => changeStatus(e.target.value as OrderStatus)}
-              aria-label="주문 상태 변경"
-            >
-              {!settable && (
-                <option value={order.status} disabled>
-                  {ORDER_STATUS_LABELS[order.status]}
-                </option>
-              )}
-              {ADMIN_SETTABLE_STATUSES.map((s) => (
-                <option key={s} value={s}>
-                  {ORDER_STATUS_LABELS[s]}
-                </option>
-              ))}
-            </Select>
-            {locked ? (
-              <Help>취소/환불된 주문의 상태는 변경할 수 없습니다.</Help>
-            ) : (
-              <Help>취소·환불 전환은 아래 환불 처리로만 진행됩니다.</Help>
-            )}
-            {statusError && <Help tone="error">{statusError}</Help>}
-          </Section>
+          <StatusFlowSection
+            status={order.status}
+            busy={statusBusy}
+            error={statusError}
+            onChange={changeStatus}
+          />
 
-          {/* 운송장 */}
           <TrackingSection
             orderId={order.id}
             orderStatus={order.status}
             shipment={shipment}
-            onChange={(nextShipment, nextStatus) =>
+            onChange={(nextShipment, nextStatus) => {
               setOrder((o) =>
                 o
-                  ? {
-                      ...o,
-                      shipments: nextShipment ? [nextShipment] : [],
-                      status: nextStatus,
-                    }
+                  ? { ...o, shipments: nextShipment ? [nextShipment] : [], status: nextStatus }
                   : o
-              )
-            }
+              );
+              refreshEvents();
+            }}
           />
 
-          {/* 관리자 메모 */}
-          <Section
-            title="관리자 메모"
-            action={
-              <span
-                className={`text-xs ${
-                  memoStatus === "error" ? "text-signal-red" : "text-ink-400"
-                }`}
-              >
-                {memoStatus === "saving" && "저장 중…"}
-                {memoStatus === "saved" && "저장됨"}
-                {memoStatus === "error" && "저장 실패"}
-              </span>
-            }
-          >
-            <Textarea
-              value={memo}
-              rows={6}
-              placeholder="운영 메모를 입력하면 자동으로 저장됩니다."
-              onChange={(e) => onMemoChange(e.target.value)}
-            />
-          </Section>
-
-          {/* 환불 / 취소 */}
           <RefundSection
             orderId={order.id}
             orderNo={order.order_no}
             status={order.status}
-            total={order.total}
-            payments={order.payments}
-            onDone={(nextStatus) =>
+            ledger={refund}
+            onDone={(nextStatus, nextLedger) => {
               setOrder((o) => {
                 if (!o) return o;
-                // 전액 환불/취소 확정 시 결제 표시도 함께 동기화
-                const refunded = ["cancelled", "refunded"].includes(nextStatus);
+                // 주문이 마감되면 결제 표시도 함께 맞춘다
+                const closed = ["cancelled", "refunded"].includes(nextStatus);
                 return {
                   ...o,
                   status: nextStatus,
-                  payments: refunded
+                  payments: closed
                     ? o.payments.map((p) =>
-                        p.status === "paid" ? { ...p, status: "refunded" as const } : p
+                        p.status === "paid" || p.status === "partial_refunded"
+                          ? { ...p, status: "refunded" as const }
+                          : p
                       )
                     : o.payments,
                 };
-              })
-            }
+              });
+              if (nextLedger) setRefund(nextLedger);
+              // 환불은 이력을 남긴다 — 서버가 새로 적은 이력을 받아 온다
+              refreshEvents();
+            }}
           />
+
+          <OrderTimeline events={events} memoKinds={memoKinds} onAdd={addEvent} />
+
+          <OrderMemoSection value={memo} status={memoStatus} onChange={onMemoChange} />
         </div>
       </div>
+
+      <ShippingEditModal
+        open={shippingOpen}
+        orderStatus={order.status}
+        recipient={order.recipient}
+        onClose={() => setShippingOpen(false)}
+        onSave={saveRecipient}
+      />
     </div>
   );
 }

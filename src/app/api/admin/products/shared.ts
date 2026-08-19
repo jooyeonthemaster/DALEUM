@@ -36,20 +36,51 @@ function nullableIntField(
   return intField(v, label, opts);
 }
 
+/**
+ * 뱃지·태그 같은 문자열 목록 정제.
+ *
+ * 옛 코드는 `slice(0, maxLen)` 으로 긴 항목을 말없이 자르고, 개수가 넘치면 나머지를
+ * 조용히 버렸다. 영양·스펙에서 같은 방식이 실제로 법정 표시사항을 잘라 먹은 적이 있어
+ * (아래 KV_VALUE_MAX 주석 참고) 여기도 같은 원칙으로 바꾼다 — **자르지 말고 거절한다.**
+ * 관리자가 뭘 잃었는지 모르는 것보다 저장이 한 번 막히는 편이 낫다.
+ */
 function strArray(v: unknown, label: string, maxItems: number, maxLen: number): string[] {
   if (v === null || v === undefined) return [];
   if (!Array.isArray(v)) throw new InputError(`${label} 형식이 올바르지 않습니다.`);
   const out: string[] = [];
   for (const item of v) {
     if (typeof item !== "string") continue;
-    const t = item.trim().slice(0, maxLen);
-    if (t && !out.includes(t)) out.push(t);
-    if (out.length >= maxItems) break;
+    const t = item.trim();
+    if (!t) continue;
+    if (t.length > maxLen) {
+      throw new InputError(
+        `${label} '${t.slice(0, 12)}…' 이(가) 너무 깁니다. ${maxLen}자 이내로 줄여 주세요.`
+      );
+    }
+    if (!out.includes(t)) out.push(t);
+    if (out.length > maxItems) {
+      throw new InputError(`${label}은(는) 최대 ${maxItems}개까지 넣을 수 있습니다.`);
+    }
   }
   return out;
 }
 
-/** nutrition/specs 키-값 정제 — 키 40자, 값 200자, 최대 30개 */
+/* ------------------------------------------------------------
+   영양·스펙 키-값의 한도.
+
+   옛 한도(값 200자)는 실제 데이터를 담지 못했다. 운영 중인 27개 상품 가운데
+   9개 값이 200자를 넘고(최장 386자 — 냉면인데곤약의 원재료명), 옛 코드는 그것을
+   `slice(0, 200)` 으로 **말없이 잘라** 저장했다. 관리자가 그 상품을 열어 아무것도
+   바꾸지 않고 저장만 눌러도 원재료명·인증번호 뒤쪽이 영구히 사라졌다는 뜻이다.
+   식품 표시사항은 법정 정보라 소리 없는 절단이 가장 나쁜 실패다.
+
+   그래서 한도를 실데이터가 들어갈 만큼 올리고, 그래도 넘치면 **자르지 말고 거절**한다.
+   ------------------------------------------------------------ */
+const KV_KEY_MAX = 60;
+const KV_VALUE_MAX = 2_000;
+const KV_MAX_ITEMS = 60;
+
+/** nutrition/specs 키-값 정제 — 한도를 넘으면 자르지 않고 InputError 로 알린다 */
 function kvRecord(v: unknown, label: string): Record<string, string | number> {
   if (v === null || v === undefined) return {};
   if (typeof v !== "object" || Array.isArray(v)) {
@@ -58,15 +89,27 @@ function kvRecord(v: unknown, label: string): Record<string, string | number> {
   const out: Record<string, string | number> = {};
   let n = 0;
   for (const [rawKey, rawVal] of Object.entries(v as Record<string, unknown>)) {
-    const key = rawKey.trim().slice(0, 40);
+    const key = rawKey.trim().slice(0, KV_KEY_MAX);
     if (!key) continue;
     if (typeof rawVal === "number" && Number.isFinite(rawVal)) {
       out[key] = rawVal;
     } else if (typeof rawVal === "string") {
-      const s = rawVal.trim().slice(0, 200);
-      if (s) out[key] = s;
+      const trimmed = rawVal.trim();
+      if (trimmed.length > KV_VALUE_MAX) {
+        // 조용히 자르면 법정 표시사항이 소리 없이 사라진다 — 저장을 막고 어디가 문제인지 알린다.
+        throw new InputError(
+          `${label}의 '${key}' 항목이 너무 깁니다. ${KV_VALUE_MAX.toLocaleString(
+            "ko-KR"
+          )}자 이내로 줄여 주세요. (현재 ${trimmed.length.toLocaleString("ko-KR")}자)`
+        );
+      }
+      if (trimmed) out[key] = trimmed;
     }
-    if (++n >= 30) break;
+    if (++n > KV_MAX_ITEMS) {
+      throw new InputError(
+        `${label} 항목은 최대 ${KV_MAX_ITEMS}개까지 넣을 수 있습니다. 일부를 지우고 다시 저장해 주세요.`
+      );
+    }
   }
   return out;
 }
@@ -96,7 +139,12 @@ export function parseProductFields(
   if (has("slug") || !partial) {
     const slug = cleanStr(p.slug, 200)?.toLowerCase() ?? null;
     if (!slug || !SLUG_RE.test(slug)) {
-      throw new InputError("URL 슬러그는 영문 소문자·숫자·한글·하이픈만 사용할 수 있습니다.");
+      // 옛 문구는 "한글도 된다"고 안내했지만 SLUG_RE 는 ASCII 만 받는다 —
+      // 한글 주소는 라우트에서 퍼센트 인코딩된 채 조회돼 상세페이지가 404 가 되기 때문이다.
+      // 안내와 검증이 어긋나 있어 관리자가 원인을 알 수 없는 거절을 당했다.
+      throw new InputError(
+        "상품 주소에는 영문 소문자·숫자·하이픈(-)만 쓸 수 있습니다. 한글은 사용할 수 없습니다."
+      );
     }
     out.slug = slug;
   }
@@ -110,6 +158,10 @@ export function parseProductFields(
   }
   if (has("description")) out.description = cleanStr(p.description, 20_000);
   if (has("story")) out.story = cleanStr(p.story, 20_000);
+  // 0003 마이그레이션으로 들어온 컬럼인데 폼과 API 어디에도 없어서, 관리자 화면만으로는
+  // 영원히 채울 수 없었다. brand 는 고객 화면 표기용, supplier 는 관리자 식별용이다.
+  if (has("brand")) out.brand = cleanStr(p.brand, 100);
+  if (has("supplier")) out.supplier = cleanStr(p.supplier, 100);
   if (has("compare_at_price")) out.compare_at_price = nullableIntField(p.compare_at_price, "정가");
   if (has("cost_price")) out.cost_price = nullableIntField(p.cost_price, "원가");
   if (has("sku")) out.sku = cleanStr(p.sku, 100);
@@ -145,6 +197,22 @@ export function parseProductFields(
   return out;
 }
 
+/**
+ * 판매가 0원인 상품이 스토어에 노출되는 것을 막는다.
+ *
+ * 목록 화면의 상태 드롭다운은 확인 절차 없이 곧바로 상태를 바꾼다. 그런데 대용량·업소용
+ * 상품 7종은 가격 협의 대상이라 판매가가 0원인 채로 임시저장돼 있다 —
+ * 드롭다운을 한 번 잘못 누르면 0원짜리 주문을 받게 된다.
+ * 그래서 "노출" 판정을 값이 바뀌는 지점(API)에서 막는다.
+ */
+export function assertSellablePrice(status: unknown, price: unknown): void {
+  if (status !== "active") return;
+  if (typeof price === "number" && price > 0) return;
+  throw new InputError(
+    "판매가가 0원인 상품은 판매중으로 바꿀 수 없습니다. 판매가를 먼저 입력해 주세요."
+  );
+}
+
 export interface ParsedImage {
   url: string;
   alt: string | null;
@@ -170,6 +238,15 @@ export interface ParsedVariant {
   name: string;
   price_delta: number;
   stock: number;
+  /**
+   * 폼을 열었을 때 화면이 보고 있던 재고. 저장 시 DB 의 현재 값과 비교하는 데 쓴다.
+   *
+   * 이게 없으면 재고가 되살아난다: 편집 화면을 연 뒤 주문이 들어와 재고가 줄면,
+   * 저장할 때 `delta = 화면값 - 현재값` 이 양수가 되어 팔린 수량이 그대로 복구된다
+   * (전형적인 lost update — 그대로 초과판매로 이어진다).
+   * 폼은 옵션 탭을 건드리지 않아도 항상 옵션 전체를 보내므로, 저장 버튼만 눌러도 일어났다.
+   */
+  expected_stock: number | null;
   sku: string | null;
   is_active: boolean;
 }
@@ -190,6 +267,7 @@ export function parseVariants(raw: unknown): ParsedVariant[] | undefined {
       name,
       price_delta: intField(v.price_delta ?? 0, "옵션 가격 차액", { min: -100_000_000 }),
       stock: intField(v.stock ?? 0, "옵션 재고", { max: 1_000_000 }),
+      expected_stock: nullableIntField(v.expected_stock, "옵션 재고", { max: 1_000_000 }),
       sku: cleanStr(v.sku, 100),
       is_active: v.is_active === undefined ? true : Boolean(v.is_active),
     });

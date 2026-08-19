@@ -2,7 +2,7 @@
 
 /* 배너/팝업/공지 탭 공용 헬퍼 + 소형 컴포넌트 */
 
-import { Input } from "@/components/admin/Field";
+import { ExternalLink } from "lucide-react";
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 
@@ -20,41 +20,6 @@ export function dateToStartIso(date: string): string | null {
 /** yyyy-mm-dd → KST 하루 끝 ISO (빈 값이면 null) */
 export function dateToEndIso(date: string): string | null {
   return date ? `${date}T23:59:59+09:00` : null;
-}
-
-/** 노출 기간 from/to 입력 쌍 */
-export function PeriodInputs({
-  from,
-  to,
-  onChange,
-}: {
-  from: string;
-  to: string;
-  onChange: (next: { from: string; to: string }) => void;
-}) {
-  return (
-    <div className="flex items-center gap-2">
-      <Input
-        aria-label="노출 시작일"
-        type="date"
-        className="max-w-44"
-        value={from}
-        max={to || undefined}
-        onChange={(e) => onChange({ from: e.target.value, to })}
-      />
-      <span aria-hidden className="text-ink-300">
-        –
-      </span>
-      <Input
-        aria-label="노출 종료일"
-        type="date"
-        className="max-w-44"
-        value={to}
-        min={from || undefined}
-        onChange={(e) => onChange({ from, to: e.target.value })}
-      />
-    </div>
-  );
 }
 
 /** 수정 모달 푸터 — 삭제(수정 시) / 취소 / 저장 */
@@ -105,12 +70,32 @@ export function EditModalFooter({
   );
 }
 
-/** 노출 기간 텍스트 */
+/** 노출 기간 텍스트 — 목록 칸에 들어간다 */
 export function periodLabel(starts_at: string | null, ends_at: string | null): string {
-  if (!starts_at && !ends_at) return "상시";
+  if (!starts_at && !ends_at) return "제한 없음";
   const from = isoToKstDate(starts_at).replaceAll("-", ".");
   const to = isoToKstDate(ends_at).replaceAll("-", ".");
-  return `${from} – ${to}`.trim();
+  if (from && !to) return `${from}부터`;
+  if (!from && to) return `${to}까지`;
+  return `${from} – ${to}`;
+}
+
+/**
+ * 고객 화면을 직접 열어 결과를 눈으로 확인하는 링크.
+ * 저장했는데 안 보이는 사고가 반복되던 자리라, 확인 통로를 화면에 상시로 둔다.
+ */
+export function StorefrontLink({ href, children }: { href: string; children: string }) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-1 text-forest-700 underline-offset-2 hover:underline"
+    >
+      {children}
+      <ExternalLink size={12} strokeWidth={1.5} aria-hidden />
+    </a>
+  );
 }
 
 /** 공용 JSON fetch — 실패 시 Error(사용자 메시지) throw */
@@ -118,9 +103,7 @@ export async function requestJson<T>(url: string, init?: RequestInit): Promise<T
   const res = await fetch(url, init);
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(
-      (body as { error?: string } | null)?.error ?? "요청을 처리하지 못했습니다."
-    );
+    throw new Error((body as { error?: string } | null)?.error ?? "요청을 처리하지 못했습니다.");
   }
   return body as T;
 }

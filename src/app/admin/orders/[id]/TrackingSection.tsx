@@ -95,7 +95,9 @@ export default function TrackingSection({
   return (
     <section className="border border-ink-200 bg-cream-50">
       <div className="flex items-center justify-between gap-3 px-5 py-3.5 hairline-b">
-        <h2 className="label-caps text-ink-400">운송장</h2>
+        {/* label-caps 는 uppercase 를 걸어 한글에는 아무 일도 안 하면서 자간만 벌린다.
+            같은 화면의 다른 카드 머리글(OrderSection)과 모양이 어긋나 여기만 흐릿하게 보였다. */}
+        <h2 className="text-[13px] font-semibold tracking-wide text-ink-500">운송장</h2>
         {registeredView && (
           <div className="flex items-center gap-3">
             <button

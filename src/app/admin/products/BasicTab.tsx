@@ -1,38 +1,91 @@
 "use client";
 
-import { FieldRow, Input, Select, Toggle } from "@/components/admin/Field";
+import { FieldRow, Help, Input, Select, Toggle } from "@/components/admin/Field";
 import { STORAGE_TYPE_LABELS } from "@/lib/constants";
 import type { Category, ProductStatus, StorageType } from "@/lib/types";
-import type { FormState } from "./form-types";
-import { BADGE_OPTIONS, PRODUCT_STATUS_OPTIONS } from "./product-ui";
+import { formatNumberForInput, parseNumberField, type FormState } from "./form-types";
+import {
+  BRAND_SUGGESTIONS,
+  PRODUCT_STATUS_HELP,
+  PRODUCT_STATUS_OPTIONS,
+  PRODUCT_STATUS_WARNS,
+  SUPPLIER_SUGGESTIONS,
+} from "./product-ui";
+import BadgePicker from "./_basic/BadgePicker";
+import NumberField from "./_basic/NumberField";
+import PriceSection from "./_basic/PriceSection";
+import ProductAddressField from "./_basic/ProductAddressField";
 
 export interface BasicTabProps {
   form: FormState;
   set: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
-  /** 상품명 입력 시 슬러그 자동 생성용 (수동 수정 후에는 비활성) */
+  /** 상품명 입력 시 주소 자동 생성용 (직접 고친 뒤에는 비활성) */
   onNameChange: (name: string) => void;
   onSlugChange: (slug: string) => void;
   categories: Category[];
+  /** 아직 카테고리 응답을 기다리는 중 — '실패' 와 반드시 구분해서 보여 준다 */
+  categoriesLoading: boolean;
+  /** 카테고리 요청이 실제로 실패했다 */
+  categoriesFailed: boolean;
   isNew: boolean;
+  /** 상품 주소 칸을 펼쳐 두었는가 — 저장 실패 후 오류 문구를 눌러 이 칸으로 올 때 부모가 열어 준다 */
+  addressOpen: boolean;
+  onAddressOpenChange: (open: boolean) => void;
 }
 
-/** 기본 정보 탭 — 이름/slug/가격/재고/상태/보관/뱃지 등 */
+/* 서버(shared.ts → cleanStr)가 말없이 잘라 내는 한도.
+   화면에 한도를 적어 두지 않으면, 한 줄 소개를 길게 쓴 사람은 저장한 뒤에야 문장이 잘린 걸 발견한다. */
+const NAME_MAX = 200;
+const SUBTITLE_MAX = 300;
+
+/** 글자 수 — 한도의 80%를 넘겼을 때만 보여 준다(평소엔 눈에 거슬리기만 하니까) */
+function CharCount({ value, max }: { value: string; max: number }) {
+  if (value.length < max * 0.8) return null;
+  const over = value.length >= max;
+  return (
+    <p className={`mt-1.5 text-xs ${over ? "text-signal-red" : "text-ink-400"}`}>
+      {value.length} / {max}자{over ? " — 여기서 더 넣으면 저장할 때 뒷부분이 잘립니다." : ""}
+    </p>
+  );
+}
+
+/**
+ * 숫자로 못 읽는 값을 알리는 한 줄.
+ *
+ * 가격 칸(PriceSection)은 예전부터 이 문구를 띄웠는데 재고·임계치·구성 수량·노출 순서는
+ * 빨간 테두리조차 없었다. 같은 실수인데 칸마다 다르게 보이면 관리자는 어느 칸이 문제인지
+ * 저장을 눌러 보기 전까지 알 수 없다 — 문구도 표시도 가격 칸과 똑같이 맞춘다.
+ */
+function NumberNote() {
+  return (
+    <p className="mt-1.5 text-xs leading-relaxed text-signal-red">
+      숫자로 읽을 수 없습니다. 숫자만 넣어 주세요.
+    </p>
+  );
+}
+
+/** 기본 정보 탭 — 이름/주소/브랜드/가격/재고/상태/보관/뱃지 등 */
 export default function BasicTab({
   form,
   set,
   onNameChange,
   onSlugChange,
   categories,
+  categoriesLoading,
+  categoriesFailed,
   isNew,
+  addressOpen,
+  onAddressOpenChange,
 }: BasicTabProps) {
-  function toggleBadge(badge: string) {
-    set(
-      "badges",
-      form.badges.includes(badge)
-        ? form.badges.filter((b) => b !== badge)
-        : [...form.badges, badge]
-    );
-  }
+  const statusHelp = PRODUCT_STATUS_HELP[form.status];
+  const statusWarn = PRODUCT_STATUS_WARNS.includes(form.status);
+
+  /* 숫자 칸의 '못 읽음' 판정은 저장 검사(validate.ts)와 같은 parseNumberField 를 쓴다.
+     화면과 저장 검사가 서로 다른 잣대를 쓰면, 빨간 표시가 없는 칸 때문에 저장이 막히는 일이 생긴다. */
+  const stockInvalid = parseNumberField(form.stock).kind === "invalid";
+  const thresholdInvalid = parseNumberField(form.low_stock_threshold).kind === "invalid";
+  const unitsInvalid = parseNumberField(form.units_per_pack).kind === "invalid";
+  const sortInvalid = parseNumberField(form.sort_order).kind === "invalid";
 
   return (
     <div className="divide-y divide-ink-100">
@@ -40,32 +93,77 @@ export default function BasicTab({
         <Input
           id="p-name"
           value={form.name}
+          maxLength={NAME_MAX}
           onChange={(e) => onNameChange(e.target.value)}
           placeholder="예: 발효곤약면 소면"
         />
+        <CharCount value={form.name} max={NAME_MAX} />
       </FieldRow>
 
-      <FieldRow
-        label="URL 슬러그"
-        required
-        htmlFor="p-slug"
-        help="상품 주소에 사용됩니다. 영문 소문자·숫자·한글·하이픈만 입력해 주세요."
-      >
-        <Input
-          id="p-slug"
+      <FieldRow label="상품 주소" required>
+        <ProductAddressField
           value={form.slug}
-          onChange={(e) => onSlugChange(e.target.value)}
-          placeholder="fermented-konjac-noodle"
+          onChange={onSlugChange}
+          isNew={isNew}
+          open={addressOpen}
+          onOpenChange={onAddressOpenChange}
+          /* 상품명조차 아직 없는 새 폼에서는 주소가 비어 있는 게 정상이다(상품명을 치면 자동으로 채워진다).
+             상품명이 들어왔는데도 주소가 비어 있다면 그때는 저장을 막는 진짜 오류다 —
+             예전에는 신규 등록에서 이 경고를 통째로 껐던 탓에, 저장을 막는 유일한 칸이
+             화면상 아무 문제 없어 보였다. */
+          showEmptyError={!isNew || form.name.trim() !== ""}
         />
       </FieldRow>
 
-      <FieldRow label="서브타이틀" htmlFor="p-subtitle">
+      <FieldRow label="한 줄 소개" htmlFor="p-subtitle">
         <Input
           id="p-subtitle"
           value={form.subtitle}
+          maxLength={SUBTITLE_MAX}
           onChange={(e) => set("subtitle", e.target.value)}
           placeholder="목록 카드에 함께 표시되는 한 줄 소개"
         />
+        <CharCount value={form.subtitle} max={SUBTITLE_MAX} />
+      </FieldRow>
+
+      <FieldRow
+        label="브랜드"
+        htmlFor="p-brand"
+        help="패키지에 인쇄된 이름입니다. 고객 상세페이지에 그대로 표시됩니다. 목록에 없으면 직접 적어 주세요."
+      >
+        <Input
+          id="p-brand"
+          list="p-brand-suggestions"
+          value={form.brand ?? ""}
+          onChange={(e) => set("brand", e.target.value)}
+          placeholder="예: 마틴조"
+          className="max-w-60"
+        />
+        <datalist id="p-brand-suggestions">
+          {BRAND_SUGGESTIONS.map((b) => (
+            <option key={b} value={b} />
+          ))}
+        </datalist>
+      </FieldRow>
+
+      <FieldRow
+        label="공급처"
+        htmlFor="p-supplier"
+        help="이 상품을 어디서 받아 오는지 구분하는 관리자 전용 항목입니다. 고객에게는 보이지 않습니다."
+      >
+        <Input
+          id="p-supplier"
+          list="p-supplier-suggestions"
+          value={form.supplier ?? ""}
+          onChange={(e) => set("supplier", e.target.value)}
+          placeholder="예: 수다락"
+          className="max-w-60"
+        />
+        <datalist id="p-supplier-suggestions">
+          {SUPPLIER_SUGGESTIONS.map((s) => (
+            <option key={s} value={s} />
+          ))}
+        </datalist>
       </FieldRow>
 
       <FieldRow label="카테고리" htmlFor="p-category">
@@ -73,6 +171,7 @@ export default function BasicTab({
           id="p-category"
           value={form.category_id}
           onChange={(e) => set("category_id", e.target.value)}
+          disabled={categoriesLoading}
           className="max-w-60"
         >
           <option value="">미분류</option>
@@ -82,44 +181,34 @@ export default function BasicTab({
             </option>
           ))}
         </Select>
+        {/* 예전에는 '길이 0' 하나로 실패를 단정해서, 폼을 열 때마다 응답이 오기 전 한 박자 동안
+            새로고침을 지시하는 붉은 오류가 떴다 — 작성 중이던 사람에게는 위험한 거짓말이다.
+            불러오는 중 / 실패 / 정상을 각각 다르게 말한다. */}
+        {categoriesLoading ? (
+          <Help>카테고리를 불러오는 중입니다.</Help>
+        ) : categoriesFailed ? (
+          // 목록을 못 불러와도 셀렉트는 「미분류」 하나짜리 정상 화면처럼 보인다 — 그래서 따로 말해 준다.
+          <Help tone="error">
+            카테고리 목록을 불러오지 못했습니다. 화면을 새로고침한 뒤 다시 골라 주세요.
+          </Help>
+        ) : (
+          form.category_id === "" && (
+            <p className="mt-1.5 text-xs leading-relaxed text-signal-amber">
+              카테고리를 정하지 않으면 카테고리 페이지에 걸리지 않아 고객이 찾기 어렵습니다.
+            </p>
+          )
+        )}
       </FieldRow>
 
-      <FieldRow label="가격" required help="정가를 입력하면 목록에 할인 표시가 됩니다. 원가는 관리자만 볼 수 있습니다.">
-        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
-          <div>
-            <Input
-              inputMode="numeric"
-              value={form.price}
-              onChange={(e) => set("price", e.target.value)}
-              placeholder="판매가"
-              aria-label="판매가"
-            />
-            <p className="mt-1 text-xs text-ink-400">판매가 (원)</p>
-          </div>
-          <div>
-            <Input
-              inputMode="numeric"
-              value={form.compare_at_price}
-              onChange={(e) => set("compare_at_price", e.target.value)}
-              placeholder="정가 (선택)"
-              aria-label="정가"
-            />
-            <p className="mt-1 text-xs text-ink-400">정가 (원)</p>
-          </div>
-          <div>
-            <Input
-              inputMode="numeric"
-              value={form.cost_price}
-              onChange={(e) => set("cost_price", e.target.value)}
-              placeholder="원가 (선택)"
-              aria-label="원가"
-            />
-            <p className="mt-1 text-xs text-ink-400">원가 (원)</p>
-          </div>
-        </div>
+      <FieldRow label="가격">
+        <PriceSection form={form} set={set} />
       </FieldRow>
 
-      <FieldRow label="SKU" htmlFor="p-sku">
+      <FieldRow
+        label="상품 코드"
+        htmlFor="p-sku"
+        help="창고·발주에서 이 상품을 가리키는 관리용 번호입니다. 비워 두어도 되고, 다른 상품이 쓰는 번호와 겹치면 저장이 막힙니다."
+      >
         <Input
           id="p-sku"
           value={form.sku}
@@ -135,17 +224,19 @@ export default function BasicTab({
           htmlFor="p-stock"
           help="등록 이후의 재고 변경은 재고 관리 화면에서 입고/조정으로 처리합니다."
         >
-          <Input
+          <NumberField
             id="p-stock"
-            inputMode="numeric"
             value={form.stock}
-            onChange={(e) => set("stock", e.target.value)}
+            onChange={(v) => set("stock", v)}
+            suffix="개"
+            invalid={stockInvalid}
             className="max-w-40"
           />
+          {stockInvalid && <NumberNote />}
         </FieldRow>
       ) : (
         <FieldRow label="재고" help="재고 수량은 재고 관리 화면에서 입고/조정으로 변경합니다.">
-          <p className="pt-2.5 text-sm text-ink-600 krw">{form.stock}개</p>
+          <p className="krw pt-2.5 text-sm text-ink-600">{formatNumberForInput(form.stock)}개</p>
         </FieldRow>
       )}
 
@@ -154,13 +245,15 @@ export default function BasicTab({
         htmlFor="p-threshold"
         help="재고가 이 수량 이하로 내려가면 목록에서 품절 임박으로 강조됩니다."
       >
-        <Input
+        <NumberField
           id="p-threshold"
-          inputMode="numeric"
           value={form.low_stock_threshold}
-          onChange={(e) => set("low_stock_threshold", e.target.value)}
+          onChange={(v) => set("low_stock_threshold", v)}
+          suffix="개"
+          invalid={thresholdInvalid}
           className="max-w-40"
         />
+        {thresholdInvalid && <NumberNote />}
       </FieldRow>
 
       <FieldRow label="판매 상태" htmlFor="p-status">
@@ -176,6 +269,11 @@ export default function BasicTab({
             </option>
           ))}
         </Select>
+        {statusWarn ? (
+          <p className="mt-1.5 text-xs leading-relaxed text-signal-amber">{statusHelp}</p>
+        ) : (
+          <Help>{statusHelp}</Help>
+        )}
       </FieldRow>
 
       <FieldRow label="보관 방법" htmlFor="p-storage">
@@ -215,40 +313,31 @@ export default function BasicTab({
         />
       </FieldRow>
 
-      <FieldRow label="구성 수량" htmlFor="p-units">
-        <Input
+      <FieldRow
+        label="구성 수량"
+        htmlFor="p-units"
+        help="한 상품 안에 몇 개가 들어 있는지입니다. 낱개로 파는 상품이면 1로 두세요."
+      >
+        <NumberField
           id="p-units"
-          inputMode="numeric"
           value={form.units_per_pack}
-          onChange={(e) => set("units_per_pack", e.target.value)}
+          onChange={(v) => set("units_per_pack", v)}
+          suffix="입"
+          invalid={unitsInvalid}
           className="max-w-40"
         />
+        {unitsInvalid && <NumberNote />}
       </FieldRow>
 
-      <FieldRow label="뱃지" help="여러 개를 동시에 선택할 수 있습니다.">
-        <div className="flex flex-wrap gap-2 pt-1">
-          {BADGE_OPTIONS.map((badge) => {
-            const on = form.badges.includes(badge);
-            return (
-              <button
-                key={badge}
-                type="button"
-                aria-pressed={on}
-                onClick={() => toggleBadge(badge)}
-                className={`rounded-full border px-3.5 py-1.5 text-xs transition-colors ${
-                  on
-                    ? "border-forest-700 bg-forest-700 text-cream-50"
-                    : "border-ink-200 bg-cream-50 text-ink-600 hover:border-forest-600 hover:text-forest-700"
-                }`}
-              >
-                {badge}
-              </button>
-            );
-          })}
-        </div>
+      <FieldRow label="뱃지">
+        <BadgePicker value={form.badges} onChange={(next) => set("badges", next)} />
       </FieldRow>
 
-      <FieldRow label="태그" htmlFor="p-tags" help="쉼표(,)로 구분해 입력해 주세요.">
+      <FieldRow
+        label="태그"
+        htmlFor="p-tags"
+        help="쉼표(,)로 구분해 입력해 주세요. 최대 20개, 한 개당 30자까지 저장됩니다."
+      >
         <Input
           id="p-tags"
           value={form.tags}
@@ -266,13 +355,14 @@ export default function BasicTab({
       </FieldRow>
 
       <FieldRow label="노출 순서" htmlFor="p-sort" help="숫자가 작을수록 목록 앞쪽에 표시됩니다.">
-        <Input
+        <NumberField
           id="p-sort"
-          inputMode="numeric"
           value={form.sort_order}
-          onChange={(e) => set("sort_order", e.target.value)}
+          onChange={(v) => set("sort_order", v)}
+          invalid={sortInvalid}
           className="max-w-40"
         />
+        {sortInvalid && <NumberNote />}
       </FieldRow>
     </div>
   );

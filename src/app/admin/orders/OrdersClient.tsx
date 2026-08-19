@@ -1,19 +1,23 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Download } from "lucide-react";
+import { Download, Truck } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import Pagination from "@/components/admin/Pagination";
 import StatusChip from "@/components/admin/StatusChip";
-import Tabs from "@/components/admin/Tabs";
-import SearchInput from "@/components/admin/SearchInput";
-import DateRange from "@/components/admin/DateRange";
+import OrdersTabs from "./OrdersTabs";
+import OrdersFilterBar from "./OrdersFilterBar";
+import OrdersEmpty from "./OrdersEmpty";
+import OrdersBulkNotice from "./OrdersBulkNotice";
+import ExportDialog from "./ExportDialog";
+import TrackingUploadDialog from "./TrackingUploadDialog";
+import { ORDER_TABS, type DateRangeValue } from "./orders-list";
 import { krw, formatDateTime, formatPhone } from "@/lib/format";
-import type { OrderStatus, OrdererInfo, RecipientInfo } from "@/lib/types";
+import type { OrderStatus, OrdererInfo } from "@/lib/types";
 
 /* ============================================================
-   관리자 주문 목록 — 상태 탭 / 검색 / 기간 필터 / 엑셀(CJ 양식)
+   관리자 주문 목록 — 상태 탭 / 검색 / 기간 / 엑셀 / 운송장 일괄 등록
    ============================================================ */
 
 interface OrderRow {
@@ -34,20 +38,12 @@ interface ListResponse {
   counts: Record<string, number>;
 }
 
-interface ExportRow {
-  order_no: string;
-  recipient: RecipientInfo;
-  order_items: { name_snapshot: string; option_snapshot: string | null; qty: number }[];
+interface Props {
+  initialTab: string;
+  initialSearch: string;
+  initialFrom: string;
+  initialTo: string;
 }
-
-const TABS = [
-  { key: "all", label: "전체" },
-  { key: "paid", label: "결제완료" },
-  { key: "preparing", label: "준비중" },
-  { key: "shipped", label: "배송중" },
-  { key: "delivered", label: "배송완료" },
-  { key: "cancelled", label: "취소·환불" },
-];
 
 function itemSummary(items: { name_snapshot: string; qty: number }[]): string {
   if (!items || items.length === 0) return "—";
@@ -55,19 +51,26 @@ function itemSummary(items: { name_snapshot: string; qty: number }[]): string {
   return items.length > 1 ? `${first} 외 ${items.length - 1}건` : first;
 }
 
-export default function OrdersClient() {
+export default function OrdersClient({
+  initialTab,
+  initialSearch,
+  initialFrom,
+  initialTo,
+}: Props) {
   const router = useRouter();
 
-  const [tab, setTab] = useState("all");
-  const [qInput, setQInput] = useState("");
-  const [search, setSearch] = useState("");
-  const [range, setRange] = useState({ from: "", to: "" });
+  const [tab, setTab] = useState(initialTab);
+  const [search, setSearch] = useState(initialSearch);
+  const [range, setRange] = useState<DateRangeValue>({ from: initialFrom, to: initialTo });
   const [page, setPage] = useState(1);
+  /** 일괄 작업 후 목록을 다시 읽기 위한 신호 */
+  const [reloadKey, setReloadKey] = useState(0);
 
   const [data, setData] = useState<ListResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [exporting, setExporting] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
 
   // ---------- 목록 조회 ----------
   useEffect(() => {
@@ -92,87 +95,27 @@ export default function OrdersClient() {
       }
     })();
     return () => controller.abort();
-  }, [tab, search, range.from, range.to, page]);
+  }, [tab, search, range.from, range.to, page, reloadKey]);
 
-  function resetAnd(fn: () => void) {
+  // ---------- 주소에 조건 싣기 ----------
+  // 목록을 다시 읽지 않도록 화면 전환 없이 주소만 갈아 끼운다.
+  // 이렇게 해야 대시보드 → 주문 관리로 넘어온 조건이 유지되고, 그 주소를 그대로 공유할 수 있다.
+  useEffect(() => {
+    const params = new URLSearchParams();
+    if (tab !== "all") params.set("tab", tab);
+    if (search) params.set("q", search);
+    if (range.from) params.set("from", range.from);
+    if (range.to) params.set("to", range.to);
+    const query = params.toString();
+    window.history.replaceState(null, "", query ? `?${query}` : window.location.pathname);
+  }, [tab, search, range.from, range.to]);
+
+  const resetAnd = useCallback((fn: () => void) => {
     setPage(1);
     fn();
-  }
+  }, []);
 
-  // ---------- 엑셀 다운로드 (CJ대한통운 대량 등록 양식) ----------
-  async function downloadExcel() {
-    if (exporting) return;
-    setExporting(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams();
-      if (search) params.set("q", search);
-      if (range.from) params.set("from", range.from);
-      if (range.to) params.set("to", range.to);
-      const res = await fetch(`/api/admin/orders/export?${params}`);
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "발송 대상 조회에 실패했습니다.");
-
-      const rows: ExportRow[] = json.rows ?? [];
-      if (rows.length === 0) {
-        setError("현재 조건에 내보낼 결제완료·준비중 주문이 없습니다.");
-        return;
-      }
-
-      const XLSX = await import("xlsx");
-      const header = [
-        "받는분성명",
-        "받는분전화번호",
-        "받는분우편번호",
-        "받는분주소",
-        "배송메세지",
-        "내품명",
-        "수량",
-        "주문번호",
-      ];
-      const aoa = rows.map((r) => {
-        const rec = r.recipient ?? ({} as RecipientInfo);
-        const items = r.order_items ?? [];
-        const first = items[0];
-        const itemName = first
-          ? `${first.name_snapshot}${first.option_snapshot ? ` (${first.option_snapshot})` : ""}${
-              items.length > 1 ? ` 외 ${items.length - 1}건` : ""
-            }`
-          : "";
-        const totalQty = items.reduce((sum, i) => sum + i.qty, 0);
-        return [
-          rec.name ?? "",
-          formatPhone(rec.phone ?? ""),
-          rec.postcode ?? "",
-          [rec.address1, rec.address2].filter(Boolean).join(" "),
-          rec.memo ?? "",
-          itemName,
-          totalQty,
-          r.order_no,
-        ];
-      });
-
-      const ws = XLSX.utils.aoa_to_sheet([header, ...aoa]);
-      ws["!cols"] = [
-        { wch: 10 },
-        { wch: 14 },
-        { wch: 10 },
-        { wch: 44 },
-        { wch: 24 },
-        { wch: 32 },
-        { wch: 6 },
-        { wch: 16 },
-      ];
-      const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "발송등록");
-      const stamp = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      XLSX.writeFile(wb, `daleum-shipping-${stamp}.xlsx`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "엑셀 다운로드에 실패했습니다.");
-    } finally {
-      setExporting(false);
-    }
-  }
+  const reload = useCallback(() => setReloadKey((k) => k + 1), []);
 
   // ---------- 테이블 ----------
   const columns: DataTableColumn<OrderRow>[] = [
@@ -196,7 +139,7 @@ export default function OrdersClient() {
         <span>
           {o.orderer?.name ?? "—"}
           {o.orderer?.phone && (
-            <span className="mt-0.5 block text-xs text-ink-400 krw">
+            <span className="krw mt-0.5 block text-xs text-ink-400">
               {formatPhone(o.orderer.phone)}
             </span>
           )}
@@ -226,71 +169,108 @@ export default function OrdersClient() {
       hideOnMobile: true,
       render: (o) =>
         o.shipments && o.shipments.length > 0 ? (
-          <span className="label-caps text-forest-700">등록</span>
+          <span className="text-xs text-forest-700">등록됨</span>
         ) : (
           <span className="text-ink-300">—</span>
         ),
     },
   ];
 
+  const counts = data?.counts ?? {};
+  const rows = data?.orders ?? [];
+  const isEmpty = !loading && rows.length === 0;
+
   return (
     <div>
       {/* 툴바 */}
-      <div className="mb-6 flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        <SearchInput
-          value={qInput}
-          onChange={setQInput}
-          onSubmit={() => resetAnd(() => setSearch(qInput.trim()))}
-          placeholder="주문번호 / 이름 / 연락처 검색"
-          className="xl:max-w-80"
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <DateRange
-            from={range.from}
-            to={range.to}
-            onChange={(next) => resetAnd(() => setRange(next))}
-          />
-          <button
-            type="button"
-            onClick={downloadExcel}
-            disabled={exporting}
-            className="inline-flex items-center gap-2 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100 disabled:opacity-50"
-          >
-            <Download size={16} strokeWidth={1.5} />
-            {exporting ? "생성 중…" : "엑셀 다운로드"}
-          </button>
-        </div>
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => setUploadOpen(true)}
+          className="inline-flex items-center gap-2 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100"
+        >
+          <Truck size={16} strokeWidth={1.5} />
+          운송장 일괄 등록
+        </button>
+        <button
+          type="button"
+          onClick={() => setExportOpen(true)}
+          className="inline-flex items-center gap-2 border border-ink-200 bg-cream-50 px-4 py-2.5 text-sm text-ink-700 transition-colors hover:bg-cream-100"
+        >
+          <Download size={16} strokeWidth={1.5} />
+          엑셀 내려받기
+        </button>
       </div>
 
-      {/* 상태 탭 */}
-      <Tabs
-        tabs={TABS.map((t) => ({ ...t, count: data?.counts?.[t.key] }))}
-        active={tab}
-        onChange={(key) => resetAnd(() => setTab(key))}
-        className="mb-5"
-      />
-
-      {error && <p className="mb-4 text-sm text-signal-red">{error}</p>}
-
-      <DataTable<OrderRow>
-        columns={columns}
-        rows={data?.orders ?? []}
-        loading={loading}
-        emptyMessage="조건에 맞는 주문이 없습니다."
-        onRowClick={(o) => router.push(`/admin/orders/${o.id}`)}
-        pagination={
-          <Pagination
-            page={page}
-            totalPages={data?.totalPages ?? 1}
-            onChange={setPage}
-          />
+      <OrdersFilterBar
+        search={search}
+        range={range}
+        onSearch={(value) => resetAnd(() => setSearch(value))}
+        onRange={(next) => resetAnd(() => setRange(next))}
+        onReset={() =>
+          resetAnd(() => {
+            setSearch("");
+            setRange({ from: "", to: "" });
+          })
         }
       />
 
-      <p className="mt-4 text-xs text-ink-400">
-        엑셀 다운로드는 현재 검색·기간 조건의 결제완료·준비중 주문을 CJ대한통운 대량 등록
-        양식으로 내려받습니다.
-      </p>
+      <OrdersTabs
+        tabs={ORDER_TABS.map((t) => ({ key: t.key, label: t.label, count: counts[t.key] }))}
+        active={tab}
+        onChange={(key) => resetAnd(() => setTab(key))}
+      />
+
+      {tab === "shipped" && <OrdersBulkNotice scope="deliverStaleShipped" onApplied={reload} />}
+      {tab === "pending" && (
+        <>
+          <p className="mb-3 text-xs leading-relaxed text-ink-500">
+            결제 전 주문입니다. 재고는 아직 줄지 않았고, 취소해도 결제사 취소는 일어나지 않습니다.
+          </p>
+          <OrdersBulkNotice scope="cancelStalePending" onApplied={reload} />
+        </>
+      )}
+
+      {error && <p className="mb-4 text-sm text-signal-red">{error}</p>}
+
+      {isEmpty ? (
+        <OrdersEmpty
+          tab={tab}
+          search={search}
+          range={range}
+          counts={counts}
+          onReset={() =>
+            resetAnd(() => {
+              setSearch("");
+              setRange({ from: "", to: "" });
+            })
+          }
+          onTab={(key) => resetAnd(() => setTab(key))}
+        />
+      ) : (
+        <DataTable<OrderRow>
+          columns={columns}
+          rows={rows}
+          loading={loading}
+          onRowClick={(o) => router.push(`/admin/orders/${o.id}`)}
+          pagination={
+            <Pagination page={page} totalPages={data?.totalPages ?? 1} onChange={setPage} />
+          }
+        />
+      )}
+
+      <ExportDialog
+        open={exportOpen}
+        tab={tab}
+        search={search}
+        range={range}
+        onClose={() => setExportOpen(false)}
+      />
+      <TrackingUploadDialog
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        onApplied={reload}
+      />
     </div>
   );
 }

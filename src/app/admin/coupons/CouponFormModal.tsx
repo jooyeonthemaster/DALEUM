@@ -2,81 +2,18 @@
 
 import { useState } from "react";
 import Modal from "@/components/admin/Modal";
-import { FieldRow, Input, Select, Toggle, Help } from "@/components/admin/Field";
-import { krw } from "@/lib/format";
+import { Help } from "@/components/admin/Field";
 import type { Coupon } from "@/lib/types";
-
-/* ---------- 폼 상태 ---------- */
-
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
-
-/** ISO → KST 기준 yyyy-mm-dd (input[type=date]) */
-function isoToKstDate(iso: string | null): string {
-  if (!iso) return "";
-  return new Date(new Date(iso).getTime() + KST_OFFSET_MS).toISOString().slice(0, 10);
-}
-
-interface CouponForm {
-  code: string;
-  name: string;
-  discount_type: "rate" | "fixed";
-  value: string;
-  min_order: string;
-  max_discount: string;
-  starts_at: string;
-  ends_at: string;
-  usage_limit: string;
-  per_user_limit: string;
-  is_active: boolean;
-}
-
-const EMPTY_FORM: CouponForm = {
-  code: "",
-  name: "",
-  discount_type: "rate",
-  value: "",
-  min_order: "0",
-  max_discount: "",
-  starts_at: "",
-  ends_at: "",
-  usage_limit: "",
-  per_user_limit: "1",
-  is_active: true,
-};
-
-function toForm(c: Coupon): CouponForm {
-  return {
-    code: c.code,
-    name: c.name,
-    discount_type: c.discount_type,
-    value: String(c.value),
-    min_order: String(c.min_order),
-    max_discount: c.max_discount === null ? "" : String(c.max_discount),
-    starts_at: isoToKstDate(c.starts_at),
-    ends_at: isoToKstDate(c.ends_at),
-    usage_limit: c.usage_limit === null ? "" : String(c.usage_limit),
-    per_user_limit: String(c.per_user_limit),
-    is_active: c.is_active,
-  };
-}
-
-function toPayload(f: CouponForm): Record<string, unknown> {
-  return {
-    code: f.code,
-    name: f.name,
-    discount_type: f.discount_type,
-    value: f.value,
-    min_order: f.min_order || 0,
-    max_discount: f.discount_type === "rate" && f.max_discount !== "" ? f.max_discount : null,
-    starts_at: f.starts_at ? `${f.starts_at}T00:00:00+09:00` : null,
-    ends_at: f.ends_at ? `${f.ends_at}T23:59:59+09:00` : null,
-    usage_limit: f.usage_limit !== "" ? f.usage_limit : null,
-    per_user_limit: f.per_user_limit || 1,
-    is_active: f.is_active,
-  };
-}
-
-/* ---------- 생성/수정 모달 ---------- */
+import CouponFormFields from "./CouponFormFields";
+import CouponPreview from "./CouponPreview";
+import {
+  EMPTY_COUPON_FORM,
+  toForm,
+  toPayload,
+  validateCouponForm,
+  type CouponForm,
+} from "./coupon-form-state";
+import { toInt } from "./coupon-math";
 
 export interface CouponFormModalProps {
   /** 수정 대상 (null이면 새 쿠폰) */
@@ -88,19 +25,52 @@ export interface CouponFormModalProps {
   onDelete: (coupon: Coupon) => void;
 }
 
+/**
+ * 쿠폰 만들기·고치기.
+ *
+ * 예전 폼에는 결과 금액이 한 군데도 없었다. 그래서 '50% · 최소주문 0원 ·
+ * 최대할인 미입력' 같은 쿠폰이 아무 저항 없이 만들어졌다. 이제 입력과 동시에
+ * 실제 할인액을 계산해 보여 주고, 한도 없는 퍼센트 할인은 한 번 더 묻는다.
+ */
 export default function CouponFormModal({
   coupon,
   onClose,
   onSaved,
   onDelete,
 }: CouponFormModalProps) {
-  const [form, setForm] = useState<CouponForm>(() => (coupon ? toForm(coupon) : EMPTY_FORM));
+  const [form, setForm] = useState<CouponForm>(() =>
+    coupon ? toForm(coupon) : EMPTY_COUPON_FORM
+  );
+  const [sample, setSample] = useState("30000");
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [needsConfirm, setNeedsConfirm] = useState(false);
 
-  async function save() {
+  const rule = {
+    discount_type: form.discount_type,
+    value: toInt(form.value) ?? 0,
+    min_order: toInt(form.min_order) ?? 0,
+    max_discount: form.discount_type === "rate" ? toInt(form.max_discount) : null,
+  };
+  // 한도 없는 퍼센트 할인은 사고가 크다 — 저장을 한 번 더 묻는다
+  const riskyUnlimited =
+    form.discount_type === "rate" && form.max_discount === "" && rule.value > 0;
+
+  async function save(confirmed: boolean) {
+    const invalid = validateCouponForm(form);
+    if (invalid) {
+      setFormError(invalid);
+      setNeedsConfirm(false);
+      return;
+    }
+    if (riskyUnlimited && !confirmed) {
+      setFormError(null);
+      setNeedsConfirm(true);
+      return;
+    }
     setSaving(true);
     setFormError(null);
+    setNeedsConfirm(false);
     try {
       const res = await fetch(coupon ? `/api/admin/coupons/${coupon.id}` : "/api/admin/coupons", {
         method: coupon ? "PATCH" : "POST",
@@ -146,7 +116,7 @@ export default function CouponFormModal({
             </button>
             <button
               type="button"
-              onClick={save}
+              onClick={() => void save(false)}
               disabled={saving}
               className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
             >
@@ -156,134 +126,40 @@ export default function CouponFormModal({
         </div>
       }
     >
-      <div className="divide-y divide-ink-100">
-        <FieldRow
-          label="쿠폰 코드"
-          required
-          htmlFor="coupon-code"
-          help="영문/숫자 2~30자. 고객이 입력하는 값입니다."
-        >
-          <Input
-            id="coupon-code"
-            value={form.code}
-            onChange={(e) => setForm({ ...form, code: e.target.value.toUpperCase() })}
-            placeholder="WELCOME10"
-          />
-        </FieldRow>
-        <FieldRow label="쿠폰 이름" required htmlFor="coupon-name">
-          <Input
-            id="coupon-name"
-            value={form.name}
-            onChange={(e) => setForm({ ...form, name: e.target.value })}
-            placeholder="신규 가입 감사 쿠폰"
-          />
-        </FieldRow>
-        <FieldRow label="할인 유형" htmlFor="coupon-type">
-          <div className="flex flex-wrap items-center gap-3">
-            <Select
-              id="coupon-type"
-              className="w-32"
-              value={form.discount_type}
-              onChange={(e) =>
-                setForm({ ...form, discount_type: e.target.value as "rate" | "fixed" })
-              }
+      <CouponFormFields form={form} onChange={setForm} riskyUnlimited={riskyUnlimited} />
+
+      <CouponPreview rule={rule} sample={sample} onSampleChange={setSample} />
+
+      {needsConfirm && (
+        <div className="mt-4 border border-signal-red px-4 py-3">
+          <p className="text-sm text-signal-red">
+            최대 할인금액을 정하지 않았습니다. 이대로 저장하면 큰 주문에서 할인이 무제한으로
+            커집니다. 그래도 저장할까요?
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              onClick={() => setNeedsConfirm(false)}
+              className="border border-ink-200 bg-cream-50 px-3 py-1.5 text-xs text-ink-700 transition-colors hover:bg-cream-100"
             >
-              <option value="rate">정률 (%)</option>
-              <option value="fixed">정액 (원)</option>
-            </Select>
-            <div className="flex items-center gap-2">
-              <Input
-                aria-label="할인 값"
-                type="number"
-                min={1}
-                className="w-28"
-                value={form.value}
-                onChange={(e) => setForm({ ...form, value: e.target.value })}
-              />
-              <span className="text-sm text-ink-500">
-                {form.discount_type === "rate" ? "%" : "원"}
-              </span>
-            </div>
+              한도를 넣겠습니다
+            </button>
+            <button
+              type="button"
+              onClick={() => void save(true)}
+              className="bg-signal-red px-3 py-1.5 text-xs text-cream-50 transition-opacity hover:opacity-90"
+            >
+              그래도 저장
+            </button>
           </div>
-        </FieldRow>
-        {form.discount_type === "rate" && (
-          <FieldRow label="최대 할인금액" htmlFor="coupon-max" help="비워 두면 한도 없이 할인됩니다.">
-            <Input
-              id="coupon-max"
-              type="number"
-              min={0}
-              className="max-w-40"
-              value={form.max_discount}
-              onChange={(e) => setForm({ ...form, max_discount: e.target.value })}
-              placeholder="5000"
-            />
-          </FieldRow>
-        )}
-        <FieldRow label="최소 주문금액" htmlFor="coupon-min" help="0이면 제한이 없습니다.">
-          <Input
-            id="coupon-min"
-            type="number"
-            min={0}
-            className="max-w-40"
-            value={form.min_order}
-            onChange={(e) => setForm({ ...form, min_order: e.target.value })}
-          />
-        </FieldRow>
-        <FieldRow label="사용 기간" help="비워 두면 상시 사용 가능합니다.">
-          <div className="flex items-center gap-2">
-            <Input
-              aria-label="시작일"
-              type="date"
-              className="max-w-44"
-              value={form.starts_at}
-              max={form.ends_at || undefined}
-              onChange={(e) => setForm({ ...form, starts_at: e.target.value })}
-            />
-            <span aria-hidden className="text-ink-300">
-              –
-            </span>
-            <Input
-              aria-label="종료일"
-              type="date"
-              className="max-w-44"
-              value={form.ends_at}
-              min={form.starts_at || undefined}
-              onChange={(e) => setForm({ ...form, ends_at: e.target.value })}
-            />
-          </div>
-        </FieldRow>
-        <FieldRow label="총 사용 한도" htmlFor="coupon-limit" help="비워 두면 무제한입니다.">
-          <Input
-            id="coupon-limit"
-            type="number"
-            min={1}
-            className="max-w-40"
-            value={form.usage_limit}
-            onChange={(e) => setForm({ ...form, usage_limit: e.target.value })}
-            placeholder="100"
-          />
-        </FieldRow>
-        <FieldRow label="1인당 한도" htmlFor="coupon-per-user">
-          <Input
-            id="coupon-per-user"
-            type="number"
-            min={1}
-            className="max-w-40"
-            value={form.per_user_limit}
-            onChange={(e) => setForm({ ...form, per_user_limit: e.target.value })}
-          />
-        </FieldRow>
-        <FieldRow label="활성" help="끄면 고객이 사용할 수 없습니다.">
-          <Toggle
-            checked={form.is_active}
-            onChange={(v) => setForm({ ...form, is_active: v })}
-            label={form.is_active ? "사용 가능" : "사용 중지"}
-          />
-        </FieldRow>
-      </div>
+        </div>
+      )}
+
       {formError && <Help tone="error">{formError}</Help>}
       {coupon && (
-        <p className="mt-4 text-xs text-ink-400 krw">지금까지 {krw(coupon.used_count)}회 사용됨</p>
+        <p className="mt-4 text-xs text-ink-400">
+          지금까지 {coupon.used_count.toLocaleString("ko-KR")}회 쓰였습니다.
+        </p>
       )}
     </Modal>
   );

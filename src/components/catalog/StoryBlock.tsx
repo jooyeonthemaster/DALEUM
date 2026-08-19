@@ -1,6 +1,35 @@
+import type { ReactNode } from "react";
+
 export interface StoryBlockProps {
   story: string;
   className?: string;
+}
+
+/**
+ * 문장 안의 강조 표시(`**이렇게**`)를 굵은 글씨로 바꾼다.
+ *
+ * 왜 이것만 지원하는가:
+ * 관리자 화면은 오래 전부터 "마크다운을 지원합니다 — 예: **굵게**" 라고 안내해 왔는데
+ * 정작 파서에는 그 규칙이 없어서, 안내를 그대로 따른 사람의 화면에는 별표가 날것으로 보였다.
+ * 약속을 지키는 쪽으로 맞춘다.
+ *
+ * 굵게 하나만 두는 것은 의도적이다. 글꼴·크기·색을 관리자가 자유롭게 정하게 하면
+ * 상품마다 제각각이 되어 브랜드 화면이 무너진다. 강조는 디자인이 정한 굵기 하나로만 준다.
+ * 별표가 짝을 이루지 않으면 규칙에 걸리지 않고 원문 그대로 남는다.
+ */
+export function renderInline(text: string): ReactNode {
+  const parts = text.split(/\*\*([^*]+)\*\*/g);
+  if (parts.length === 1) return text;
+  return parts.map((part, i) =>
+    // split 의 홀수 자리가 캡처 그룹(별표 안쪽)이다
+    i % 2 === 1 ? (
+      <strong key={i} className="font-semibold text-ink-900">
+        {part}
+      </strong>
+    ) : (
+      part
+    )
+  );
 }
 
 export type StoryBlockNode =
@@ -73,7 +102,7 @@ export default function StoryBlock({ story, className = "" }: StoryBlockProps) {
               key={i}
               className="headline-serif pt-4 text-xl text-ink-900 first:pt-0"
             >
-              {block.text}
+              {renderInline(block.text)}
             </h3>
           );
         }
@@ -85,7 +114,7 @@ export default function StoryBlock({ story, className = "" }: StoryBlockProps) {
                   key={j}
                   className="relative pl-6 text-[15px] leading-[1.85] text-ink-700 before:absolute before:left-0 before:text-ink-300 before:content-['—']"
                 >
-                  {item}
+                  {renderInline(item)}
                 </li>
               ))}
             </ul>
@@ -96,7 +125,7 @@ export default function StoryBlock({ story, className = "" }: StoryBlockProps) {
             {block.lines.map((line, j) => (
               <span key={j}>
                 {j > 0 && <br />}
-                {line}
+                {renderInline(line)}
               </span>
             ))}
           </p>

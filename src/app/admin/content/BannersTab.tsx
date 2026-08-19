@@ -1,66 +1,61 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import Modal from "@/components/admin/Modal";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import ImageUploader from "@/components/admin/ImageUploader";
-import { FieldRow, Input, Select, Toggle, Help } from "@/components/admin/Field";
+import { Toggle, Help } from "@/components/admin/Field";
+import { TOGGLE_LABELS } from "@/lib/admin-labels";
 import type { Banner } from "@/lib/types";
 import {
   isoToKstDate,
   dateToStartIso,
   dateToEndIso,
-  PeriodInputs,
   EditModalFooter,
   periodLabel,
   requestJson,
+  StorefrontLink,
 } from "./shared";
+import BannerForm, {
+  EMPTY_BANNER_FORM,
+  PLACEMENT_LABELS,
+  RENDERED_PLACEMENT,
+  type BannerFormState,
+} from "./_components/BannerForm";
+import ExposureBadge from "./_components/ExposureBadge";
+import { orderBanners, bannerStates } from "./_components/banner-rows";
+import SavedExposureNotice from "./_components/SavedExposureNotice";
+import EmptyHint from "./_components/EmptyHint";
+import { linkBlockingError } from "./_components/LinkPicker";
+import { periodBlockingError } from "./_components/PeriodField";
+import { describeLink } from "./_components/link-targets";
+import { useLinkTargets } from "./_components/useLinkTargets";
 
-const PLACEMENT_LABELS: Record<Banner["placement"], string> = {
-  hero: "홈 히어로",
-  strip: "띠 배너",
-  mid: "중간 배너",
-  footer: "푸터",
-};
-
-interface BannerForm {
-  title: string;
-  subtitle: string;
-  placement: Banner["placement"];
-  text_theme: Banner["text_theme"];
-  image_url: string;
-  link_url: string;
-  starts_at: string;
-  ends_at: string;
-  sort_order: string;
-  is_active: boolean;
-}
-
-const EMPTY_FORM: BannerForm = {
-  title: "",
-  subtitle: "",
-  placement: "hero",
-  text_theme: "dark",
-  image_url: "",
-  link_url: "",
-  starts_at: "",
-  ends_at: "",
-  sort_order: "0",
-  is_active: true,
-};
-
+/**
+ * 홈 대문 배너 관리.
+ *
+ * 목록의 핵심은 "지금 무엇이 나가고 있는가" 다. 스토어프론트는 활성 배너 중
+ * 사진이 있고 기간이 유효한 **첫 한 건만** 홈에 올린다(src/app/(shop)/page.tsx:64-67).
+ * 예전 목록에는 켜짐 스위치와 순서 숫자만 있어서, 세 개를 켜 두면 세 개가 도는 줄
+ * 알기 쉬웠다. 그래서 실제로 나가는 한 건에 배지를 달고 나머지는 이유를 말해 준다.
+ */
 export default function BannersTab() {
   const [rows, setRows] = useState<Banner[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Banner | null>(null);
-  const [form, setForm] = useState<BannerForm>(EMPTY_FORM);
+  const [form, setForm] = useState<BannerFormState>(EMPTY_BANNER_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Banner | null>(null);
+  // 방금 저장한 행의 id. 불리언이던 것을 id 로 바꾼 이유 —
+  // "저장했다" 와 "그래서 고객에게 나간다" 는 다른 말이고, 후자는 그 행의 상태를 봐야 안다.
+  const [savedId, setSavedId] = useState<string | null>(null);
+
+  const { targets, loading: targetsLoading } = useLinkTargets();
 
   const load = useCallback(async () => {
     try {
@@ -81,10 +76,16 @@ export default function BannersTab() {
     void load();
   }, [load]);
 
+  // 정렬·상태 판정은 banner-rows.ts 로 옮겼다 — 스토어프론트와 같은 순서여야 한다는 사실이
+  // 화면 코드 한가운데 묻혀 있으면 다음 사람이 그것을 모르고 손댄다
+  const ordered = useMemo(() => orderBanners(rows), [rows]);
+  const states = useMemo(() => bannerStates(ordered, new Date()), [ordered]);
+
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm(EMPTY_BANNER_FORM);
     setFormError(null);
+    setSavedId(null);
     setModalOpen(true);
   }
 
@@ -94,23 +95,34 @@ export default function BannersTab() {
       title: b.title,
       subtitle: b.subtitle ?? "",
       placement: b.placement,
-      text_theme: b.text_theme,
       image_url: b.image_url ?? "",
       link_url: b.link_url ?? "",
       starts_at: isoToKstDate(b.starts_at),
       ends_at: isoToKstDate(b.ends_at),
-      sort_order: String(b.sort_order),
       is_active: b.is_active,
     });
     setFormError(null);
+    setSavedId(null);
     setModalOpen(true);
   }
 
+  /** 저장 전에 화면에서 막는다 — 서버까지 갔다가 거절당하면 무엇이 문제인지 흐려진다 */
+  function validate(): string | null {
+    if (!form.title.trim()) return "큰 제목을 입력해 주세요.";
+    if (!form.image_url) return "배경 사진을 올려 주세요. 사진이 없으면 홈에 나가지 않습니다.";
+    return linkBlockingError(form.link_url) ?? periodBlockingError(form.starts_at, form.ends_at);
+  }
+
   async function save() {
+    const invalid = validate();
+    if (invalid) {
+      setFormError(invalid);
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
-      await requestJson(
+      const body = await requestJson<{ banner: Banner }>(
         editing ? `/api/admin/content/banners/${editing.id}` : "/api/admin/content/banners",
         {
           method: editing ? "PATCH" : "POST",
@@ -119,17 +131,18 @@ export default function BannersTab() {
             title: form.title,
             subtitle: form.subtitle,
             placement: form.placement,
-            text_theme: form.text_theme,
             image_url: form.image_url,
             link_url: form.link_url,
             starts_at: dateToStartIso(form.starts_at),
             ends_at: dateToEndIso(form.ends_at),
-            sort_order: form.sort_order,
+            // 순서는 목록의 위·아래 버튼이 매긴다. 새 배너는 맨 뒤로 붙인다.
+            sort_order: editing ? undefined : rows.length,
             is_active: form.is_active,
           }),
         }
       );
       setModalOpen(false);
+      setSavedId(body.banner.id);
       await load();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "저장에 실패했습니다.");
@@ -151,6 +164,33 @@ export default function BannersTab() {
     }
   }
 
+  /**
+   * 위·아래로 옮기기. 저장할 때 0..n-1 로 다시 매긴다 —
+   * 예전처럼 숫자를 손으로 넣으면 0이 여럿 생겨 어느 것이 먼저인지 아무도 몰랐다.
+   */
+  async function move(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    const list = ordered.filter((r) => r.placement === RENDERED_PLACEMENT);
+    if (target < 0 || target >= list.length) return;
+    const next = [...list];
+    [next[index], next[target]] = [next[target], next[index]];
+    setRows((prev) =>
+      prev.map((row) => {
+        const at = next.findIndex((r) => r.id === row.id);
+        return at >= 0 ? { ...row, sort_order: at } : row;
+      })
+    );
+    for (const [at, row] of next.entries()) {
+      if (row.sort_order === at) continue;
+      await requestJson(`/api/admin/content/banners/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: at }),
+      }).catch(() => null);
+    }
+    await load();
+  }
+
   async function remove() {
     if (!deleting) return;
     await requestJson(`/api/admin/content/banners/${deleting.id}`, { method: "DELETE" });
@@ -158,6 +198,11 @@ export default function BannersTab() {
     setModalOpen(false);
     await load();
   }
+
+  const heroRows = ordered.filter((r) => r.placement === RENDERED_PLACEMENT);
+  // 대기 안내에서 "무엇에 밀려 대기인지" 를 이름으로 짚어 준다. 제목의 줄바꿈은 한 줄로 편다.
+  const liveTitle =
+    ordered.find((r) => states.get(r.id) === "live")?.title.split("\n").join(" ") ?? null;
 
   const columns: DataTableColumn<Banner>[] = [
     {
@@ -171,32 +216,77 @@ export default function BannersTab() {
             )}
           </span>
           <span className="min-w-0">
-            <span className="block truncate font-medium text-ink-900">{b.title}</span>
-            {b.subtitle && <span className="block truncate text-xs text-ink-400">{b.subtitle}</span>}
+            <span className="block truncate font-medium text-ink-900">
+              {b.title.split("\n").join(" ")}
+            </span>
+            <span className="block truncate text-xs text-ink-400">
+              {describeLink(b.link_url ?? "", targets)
+                ? `누르면 ${describeLink(b.link_url ?? "", targets)}로 이동`
+                : "눌러도 이동하지 않음"}
+            </span>
           </span>
         </span>
       ),
     },
     {
-      key: "placement",
-      label: "위치",
+      key: "state",
+      label: "지금 상태",
       align: "center",
-      width: "110px",
-      render: (b) => PLACEMENT_LABELS[b.placement] ?? b.placement,
+      width: "120px",
+      render: (b) =>
+        b.placement === RENDERED_PLACEMENT ? (
+          <ExposureBadge state={states.get(b.id) ?? "hidden"} />
+        ) : (
+          <span className="text-[11px] text-signal-red">
+            {PLACEMENT_LABELS[b.placement]} · 표시 안 됨
+          </span>
+        ),
     },
     {
       key: "period",
       label: "노출 기간",
       hideOnMobile: true,
-      width: "190px",
+      width: "180px",
       render: (b) => periodLabel(b.starts_at, b.ends_at),
     },
-    { key: "sort_order", label: "순서", align: "center", width: "70px", hideOnMobile: true },
+    {
+      key: "order",
+      label: "순서",
+      align: "center",
+      width: "90px",
+      hideOnMobile: true,
+      render: (b) => {
+        const index = heroRows.findIndex((r) => r.id === b.id);
+        if (index < 0) return <span className="text-ink-300">—</span>;
+        return (
+          <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label="위로 올리기"
+              disabled={index === 0}
+              onClick={() => void move(index, -1)}
+              className="border border-ink-200 p-1 text-ink-600 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-30"
+            >
+              <ChevronUp size={13} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label="아래로 내리기"
+              disabled={index === heroRows.length - 1}
+              onClick={() => void move(index, 1)}
+              className="border border-ink-200 p-1 text-ink-600 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-30"
+            >
+              <ChevronDown size={13} strokeWidth={1.5} />
+            </button>
+          </span>
+        );
+      },
+    },
     {
       key: "is_active",
-      label: "활성",
+      label: TOGGLE_LABELS.switch,
       align: "center",
-      width: "80px",
+      width: "90px",
       render: (b) => (
         <span onClick={(e) => e.stopPropagation()}>
           <Toggle checked={b.is_active} onChange={(next) => toggleActive(b, next)} />
@@ -207,24 +297,47 @@ export default function BannersTab() {
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <p className="text-sm text-ink-400 krw">총 {rows.length}개</p>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
-        >
-          새 배너
-        </button>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-500">
+          홈 첫 화면에 깔리는 큰 배너입니다. 켜 둔 것 중 <b className="text-ink-900">맨 위 하나만</b>{" "}
+          나갑니다. <StorefrontLink href="/">홈 화면 확인하기</StorefrontLink>
+        </p>
+        {rows.length > 0 && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
+          >
+            새 배너 만들기
+          </button>
+        )}
       </div>
 
-      <DataTable<Banner>
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        emptyMessage="등록된 배너가 없습니다."
-        onRowClick={openEdit}
-      />
+      {savedId && (
+        <SavedExposureNotice
+          kind="배너"
+          state={states.get(savedId) ?? null}
+          blockedBy={liveTitle}
+        />
+      )}
+
+      {!loading && rows.length === 0 ? (
+        <EmptyHint
+          title="아직 만든 배너가 없습니다."
+          description="배너를 만들면 홈 첫 화면의 큰 사진과 문구가 바뀝니다. 만들지 않으면 기본 화면이 그대로 나갑니다."
+          actionLabel="첫 배너 만들기"
+          onAction={openCreate}
+          extra={<StorefrontLink href="/">지금 홈 화면 보기</StorefrontLink>}
+        />
+      ) : (
+        <DataTable<Banner>
+          columns={columns}
+          rows={ordered}
+          loading={loading}
+          emptyMessage="등록된 배너가 없습니다."
+          onRowClick={openEdit}
+        />
+      )}
 
       <Modal
         open={modalOpen}
@@ -241,94 +354,12 @@ export default function BannersTab() {
           />
         }
       >
-        <div className="divide-y divide-ink-100">
-          <FieldRow label="제목" required htmlFor="banner-title">
-            <Input
-              id="banner-title"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="발효가 완성한 곤약의 식탁"
-            />
-          </FieldRow>
-          <FieldRow label="부제" htmlFor="banner-subtitle">
-            <Input
-              id="banner-subtitle"
-              value={form.subtitle}
-              onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
-            />
-          </FieldRow>
-          <FieldRow label="위치" htmlFor="banner-placement">
-            <Select
-              id="banner-placement"
-              className="max-w-52"
-              value={form.placement}
-              onChange={(e) =>
-                setForm({ ...form, placement: e.target.value as Banner["placement"] })
-              }
-            >
-              <option value="hero">홈 히어로</option>
-              <option value="strip">띠 배너</option>
-              <option value="mid">중간 배너</option>
-            </Select>
-          </FieldRow>
-          <FieldRow
-            label="텍스트 테마"
-            htmlFor="banner-theme"
-            help="이미지 위에 올라갈 글자 색을 정합니다. 밝은 이미지에는 어두운 글자를 쓰세요."
-          >
-            <Select
-              id="banner-theme"
-              className="max-w-52"
-              value={form.text_theme}
-              onChange={(e) =>
-                setForm({ ...form, text_theme: e.target.value as Banner["text_theme"] })
-              }
-            >
-              <option value="dark">어두운 글자</option>
-              <option value="light">밝은 글자</option>
-            </Select>
-          </FieldRow>
-          <FieldRow label="이미지" help="1장만 등록됩니다. 새로 올리면 교체됩니다.">
-            <ImageUploader
-              value={form.image_url ? [{ url: form.image_url }] : []}
-              onChange={(next) => setForm({ ...form, image_url: next[0]?.url ?? "" })}
-              bucket="banners"
-              prefix="banners"
-              multiple={false}
-            />
-          </FieldRow>
-          <FieldRow label="링크 URL" htmlFor="banner-link" help="비워 두면 클릭해도 이동하지 않습니다.">
-            <Input
-              id="banner-link"
-              value={form.link_url}
-              onChange={(e) => setForm({ ...form, link_url: e.target.value })}
-              placeholder="/products"
-            />
-          </FieldRow>
-          <FieldRow label="노출 기간" help="비워 두면 상시 노출됩니다.">
-            <PeriodInputs
-              from={form.starts_at}
-              to={form.ends_at}
-              onChange={({ from, to }) => setForm({ ...form, starts_at: from, ends_at: to })}
-            />
-          </FieldRow>
-          <FieldRow label="순서" htmlFor="banner-sort" help="숫자가 작을수록 먼저 노출됩니다.">
-            <Input
-              id="banner-sort"
-              type="number"
-              className="max-w-32"
-              value={form.sort_order}
-              onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-            />
-          </FieldRow>
-          <FieldRow label="활성">
-            <Toggle
-              checked={form.is_active}
-              onChange={(v) => setForm({ ...form, is_active: v })}
-              label={form.is_active ? "노출 중" : "숨김"}
-            />
-          </FieldRow>
-        </div>
+        <BannerForm
+          form={form}
+          onChange={setForm}
+          targets={targets}
+          targetsLoading={targetsLoading}
+        />
         {formError && <Help tone="error">{formError}</Help>}
       </Modal>
 

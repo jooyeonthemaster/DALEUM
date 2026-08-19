@@ -1,63 +1,58 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import Image from "next/image";
+import { ChevronUp, ChevronDown } from "lucide-react";
 import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import Modal from "@/components/admin/Modal";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import ImageUploader from "@/components/admin/ImageUploader";
-import { FieldRow, Input, Select, Textarea, Toggle, Help } from "@/components/admin/Field";
+import { Toggle, Help } from "@/components/admin/Field";
+import { TOGGLE_LABELS } from "@/lib/admin-labels";
 import type { Popup } from "@/lib/types";
 import {
   isoToKstDate,
   dateToStartIso,
   dateToEndIso,
-  PeriodInputs,
   EditModalFooter,
   periodLabel,
   requestJson,
+  StorefrontLink,
 } from "./shared";
+import PopupForm, {
+  EMPTY_POPUP_FORM,
+  POSITION_LABELS,
+  type PopupFormState,
+} from "./_components/PopupForm";
+import ExposureBadge, { exposureState, type ExposureState } from "./_components/ExposureBadge";
+import SavedExposureNotice from "./_components/SavedExposureNotice";
+import EmptyHint from "./_components/EmptyHint";
+import { linkBlockingError } from "./_components/LinkPicker";
+import { periodBlockingError } from "./_components/PeriodField";
+import { describeLink } from "./_components/link-targets";
+import { useLinkTargets } from "./_components/useLinkTargets";
 
-const POSITION_LABELS: Record<Popup["position"], string> = {
-  center: "중앙",
-  "bottom-left": "좌측 하단",
-  bottom: "하단",
-};
-
-interface PopupForm {
-  title: string;
-  image_url: string;
-  content: string;
-  link_url: string;
-  position: Popup["position"];
-  starts_at: string;
-  ends_at: string;
-  sort_order: string;
-  is_active: boolean;
-}
-
-const EMPTY_FORM: PopupForm = {
-  title: "",
-  image_url: "",
-  content: "",
-  link_url: "",
-  position: "center",
-  starts_at: "",
-  ends_at: "",
-  sort_order: "0",
-  is_active: true,
-};
-
+/**
+ * 홈 팝업 관리.
+ *
+ * 배너와 같은 함정이 있다 — 켜 둔 팝업이 여러 개여도 홈에는 기간이 유효한
+ * **첫 한 건만** 뜬다(src/app/(shop)/page.tsx:86-87). 순서 숫자를 손으로 넣던
+ * 자리를 위·아래 버튼으로 바꾸고, 실제로 뜨는 한 건에 배지를 단다.
+ */
 export default function PopupsTab() {
   const [rows, setRows] = useState<Popup[]>([]);
   const [loading, setLoading] = useState(true);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<Popup | null>(null);
-  const [form, setForm] = useState<PopupForm>(EMPTY_FORM);
+  const [form, setForm] = useState<PopupFormState>(EMPTY_POPUP_FORM);
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<Popup | null>(null);
+  // 방금 저장한 행의 id. 불리언이던 것을 id 로 바꾼 이유 —
+  // "저장했다" 와 "그래서 고객에게 뜬다" 는 다른 말이고, 후자는 그 행의 상태를 봐야 안다.
+  const [savedId, setSavedId] = useState<string | null>(null);
+
+  const { targets, loading: targetsLoading } = useLinkTargets();
 
   const load = useCallback(async () => {
     try {
@@ -78,10 +73,40 @@ export default function PopupsTab() {
     void load();
   }, [load]);
 
+  /** 스토어프론트와 같은 순서(sort_order 오름차순)로 훑는다 */
+  const ordered = useMemo(
+    () =>
+      [...rows].sort((a, b) =>
+        a.sort_order !== b.sort_order
+          ? a.sort_order - b.sort_order
+          : a.created_at < b.created_at
+            ? 1
+            : -1
+      ),
+    [rows]
+  );
+
+  const states = useMemo(() => {
+    const now = new Date();
+    const map = new Map<string, ExposureState>();
+    let taken = false;
+    for (const row of ordered) {
+      const state = exposureState(
+        { is_active: row.is_active, starts_at: row.starts_at, ends_at: row.ends_at },
+        taken,
+        now
+      );
+      if (state === "live") taken = true;
+      map.set(row.id, state);
+    }
+    return map;
+  }, [ordered]);
+
   function openCreate() {
     setEditing(null);
-    setForm(EMPTY_FORM);
+    setForm(EMPTY_POPUP_FORM);
     setFormError(null);
+    setSavedId(null);
     setModalOpen(true);
   }
 
@@ -95,18 +120,31 @@ export default function PopupsTab() {
       position: p.position,
       starts_at: isoToKstDate(p.starts_at),
       ends_at: isoToKstDate(p.ends_at),
-      sort_order: String(p.sort_order),
       is_active: p.is_active,
     });
     setFormError(null);
+    setSavedId(null);
     setModalOpen(true);
   }
 
+  function validate(): string | null {
+    if (!form.title.trim()) return "제목을 입력해 주세요.";
+    if (!form.image_url && !form.content.trim()) {
+      return "사진이나 본문 중 하나는 있어야 고객에게 보여 줄 것이 생깁니다.";
+    }
+    return linkBlockingError(form.link_url) ?? periodBlockingError(form.starts_at, form.ends_at);
+  }
+
   async function save() {
+    const invalid = validate();
+    if (invalid) {
+      setFormError(invalid);
+      return;
+    }
     setSaving(true);
     setFormError(null);
     try {
-      await requestJson(
+      const body = await requestJson<{ popup: Popup }>(
         editing ? `/api/admin/content/popups/${editing.id}` : "/api/admin/content/popups",
         {
           method: editing ? "PATCH" : "POST",
@@ -119,12 +157,14 @@ export default function PopupsTab() {
             position: form.position,
             starts_at: dateToStartIso(form.starts_at),
             ends_at: dateToEndIso(form.ends_at),
-            sort_order: form.sort_order,
+            // 순서는 목록의 위·아래 버튼이 매긴다. 새 팝업은 맨 뒤로 붙인다.
+            sort_order: editing ? undefined : rows.length,
             is_active: form.is_active,
           }),
         }
       );
       setModalOpen(false);
+      setSavedId(body.popup.id);
       await load();
     } catch (e) {
       setFormError(e instanceof Error ? e.message : "저장에 실패했습니다.");
@@ -146,6 +186,29 @@ export default function PopupsTab() {
     }
   }
 
+  /** 위·아래로 옮기기 — 저장하며 0..n-1 로 다시 매겨 같은 번호가 겹치지 않게 한다 */
+  async function move(index: number, dir: -1 | 1) {
+    const target = index + dir;
+    if (target < 0 || target >= ordered.length) return;
+    const next = [...ordered];
+    [next[index], next[target]] = [next[target], next[index]];
+    setRows((prev) =>
+      prev.map((row) => {
+        const at = next.findIndex((r) => r.id === row.id);
+        return at >= 0 ? { ...row, sort_order: at } : row;
+      })
+    );
+    for (const [at, row] of next.entries()) {
+      if (row.sort_order === at) continue;
+      await requestJson(`/api/admin/content/popups/${row.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sort_order: at }),
+      }).catch(() => null);
+    }
+    await load();
+  }
+
   async function remove() {
     if (!deleting) return;
     await requestJson(`/api/admin/content/popups/${deleting.id}`, { method: "DELETE" });
@@ -154,44 +217,90 @@ export default function PopupsTab() {
     await load();
   }
 
+  // 대기 안내에서 "무엇에 밀려 대기인지" 를 이름으로 짚어 준다
+  const liveTitle = ordered.find((r) => states.get(r.id) === "live")?.title ?? null;
+
   const columns: DataTableColumn<Popup>[] = [
     {
       key: "title",
       label: "팝업",
       render: (p) => (
         <span className="flex items-center gap-3">
-          <span className="relative hidden h-12 w-10 shrink-0 overflow-hidden border border-ink-200 bg-cream-100 md:block">
+          <span className="relative hidden h-12 w-16 shrink-0 overflow-hidden border border-ink-200 bg-cream-100 md:block">
             {p.image_url && (
-              <Image src={p.image_url} alt="" fill sizes="40px" className="object-cover" />
+              <Image src={p.image_url} alt="" fill sizes="64px" className="object-cover" />
             )}
           </span>
           <span className="min-w-0">
             <span className="block truncate font-medium text-ink-900">{p.title}</span>
-            {p.link_url && <span className="block truncate text-xs text-ink-400">{p.link_url}</span>}
+            <span className="block truncate text-xs text-ink-400">
+              {describeLink(p.link_url ?? "", targets)
+                ? `누르면 ${describeLink(p.link_url ?? "", targets)}로 이동`
+                : "눌러도 이동하지 않음"}
+            </span>
           </span>
         </span>
       ),
     },
     {
-      key: "position",
-      label: "위치",
+      key: "state",
+      label: "지금 상태",
       align: "center",
-      width: "100px",
-      render: (p) => POSITION_LABELS[p.position] ?? p.position,
+      width: "110px",
+      render: (p) => <ExposureBadge state={states.get(p.id) ?? "hidden"} />,
+    },
+    {
+      key: "position",
+      label: "뜨는 자리",
+      align: "center",
+      width: "120px",
+      hideOnMobile: true,
+      render: (p) => POSITION_LABELS[p.position] ?? "화면 가운데",
     },
     {
       key: "period",
       label: "노출 기간",
       hideOnMobile: true,
-      width: "190px",
+      width: "180px",
       render: (p) => periodLabel(p.starts_at, p.ends_at),
     },
-    { key: "sort_order", label: "순서", align: "center", width: "70px", hideOnMobile: true },
+    {
+      key: "order",
+      label: "순서",
+      align: "center",
+      width: "90px",
+      hideOnMobile: true,
+      render: (p) => {
+        const index = ordered.findIndex((r) => r.id === p.id);
+        return (
+          <span className="inline-flex items-center gap-0.5" onClick={(e) => e.stopPropagation()}>
+            <button
+              type="button"
+              aria-label="위로 올리기"
+              disabled={index <= 0}
+              onClick={() => void move(index, -1)}
+              className="border border-ink-200 p-1 text-ink-600 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-30"
+            >
+              <ChevronUp size={13} strokeWidth={1.5} />
+            </button>
+            <button
+              type="button"
+              aria-label="아래로 내리기"
+              disabled={index === ordered.length - 1}
+              onClick={() => void move(index, 1)}
+              className="border border-ink-200 p-1 text-ink-600 transition-colors hover:border-forest-600 hover:text-forest-700 disabled:opacity-30"
+            >
+              <ChevronDown size={13} strokeWidth={1.5} />
+            </button>
+          </span>
+        );
+      },
+    },
     {
       key: "is_active",
-      label: "활성",
+      label: TOGGLE_LABELS.switch,
       align: "center",
-      width: "80px",
+      width: "90px",
       render: (p) => (
         <span onClick={(e) => e.stopPropagation()}>
           <Toggle checked={p.is_active} onChange={(next) => toggleActive(p, next)} />
@@ -202,24 +311,49 @@ export default function PopupsTab() {
 
   return (
     <div>
-      <div className="mb-5 flex items-center justify-between gap-4">
-        <p className="text-sm text-ink-400 krw">총 {rows.length}개</p>
-        <button
-          type="button"
-          onClick={openCreate}
-          className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
-        >
-          새 팝업
-        </button>
+      <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-ink-500">
+          홈에 들어온 고객에게 한 번 띄우는 알림창입니다. 켜 둔 것 중{" "}
+          <b className="text-ink-900">맨 위 하나만</b> 뜹니다.{" "}
+          <StorefrontLink href="/">홈 화면 확인하기</StorefrontLink>
+        </p>
+        {rows.length > 0 && (
+          <button
+            type="button"
+            onClick={openCreate}
+            className="bg-forest-700 px-4 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800"
+          >
+            새 팝업 만들기
+          </button>
+        )}
       </div>
 
-      <DataTable<Popup>
-        columns={columns}
-        rows={rows}
-        loading={loading}
-        emptyMessage="등록된 팝업이 없습니다."
-        onRowClick={openEdit}
-      />
+      {savedId && (
+        <SavedExposureNotice
+          kind="팝업"
+          state={states.get(savedId) ?? null}
+          blockedBy={liveTitle}
+          extra="팝업은 한 번 닫으면 그 브라우저에서 24시간 동안 다시 뜨지 않습니다."
+        />
+      )}
+
+      {!loading && rows.length === 0 ? (
+        <EmptyHint
+          title="아직 만든 팝업이 없습니다."
+          description="배송 지연이나 이벤트처럼 꼭 알려야 할 일이 있을 때 홈에 들어온 고객에게 한 번 띄웁니다."
+          actionLabel="첫 팝업 만들기"
+          onAction={openCreate}
+          extra={<StorefrontLink href="/">지금 홈 화면 보기</StorefrontLink>}
+        />
+      ) : (
+        <DataTable<Popup>
+          columns={columns}
+          rows={ordered}
+          loading={loading}
+          emptyMessage="등록된 팝업이 없습니다."
+          onRowClick={openEdit}
+        />
+      )}
 
       <Modal
         open={modalOpen}
@@ -236,76 +370,12 @@ export default function PopupsTab() {
           />
         }
       >
-        <div className="divide-y divide-ink-100">
-          <FieldRow label="제목" required htmlFor="popup-title">
-            <Input
-              id="popup-title"
-              value={form.title}
-              onChange={(e) => setForm({ ...form, title: e.target.value })}
-              placeholder="추석 배송 안내"
-            />
-          </FieldRow>
-          <FieldRow label="이미지" help="1장만 등록됩니다. 새로 올리면 교체됩니다.">
-            <ImageUploader
-              value={form.image_url ? [{ url: form.image_url }] : []}
-              onChange={(next) => setForm({ ...form, image_url: next[0]?.url ?? "" })}
-              bucket="banners"
-              prefix="popups"
-              multiple={false}
-            />
-          </FieldRow>
-          <FieldRow label="내용" htmlFor="popup-content" help="이미지 없이 텍스트만 노출할 수도 있습니다.">
-            <Textarea
-              id="popup-content"
-              rows={3}
-              value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-            />
-          </FieldRow>
-          <FieldRow label="링크 URL" htmlFor="popup-link" help="비워 두면 클릭해도 이동하지 않습니다.">
-            <Input
-              id="popup-link"
-              value={form.link_url}
-              onChange={(e) => setForm({ ...form, link_url: e.target.value })}
-              placeholder="/support"
-            />
-          </FieldRow>
-          <FieldRow label="위치" htmlFor="popup-position">
-            <Select
-              id="popup-position"
-              className="max-w-52"
-              value={form.position}
-              onChange={(e) => setForm({ ...form, position: e.target.value as Popup["position"] })}
-            >
-              <option value="center">중앙</option>
-              <option value="bottom-left">좌측 하단</option>
-              <option value="bottom">하단</option>
-            </Select>
-          </FieldRow>
-          <FieldRow label="노출 기간" help="비워 두면 상시 노출됩니다.">
-            <PeriodInputs
-              from={form.starts_at}
-              to={form.ends_at}
-              onChange={({ from, to }) => setForm({ ...form, starts_at: from, ends_at: to })}
-            />
-          </FieldRow>
-          <FieldRow label="순서" htmlFor="popup-sort" help="숫자가 작을수록 먼저 노출됩니다.">
-            <Input
-              id="popup-sort"
-              type="number"
-              className="max-w-32"
-              value={form.sort_order}
-              onChange={(e) => setForm({ ...form, sort_order: e.target.value })}
-            />
-          </FieldRow>
-          <FieldRow label="활성">
-            <Toggle
-              checked={form.is_active}
-              onChange={(v) => setForm({ ...form, is_active: v })}
-              label={form.is_active ? "노출 중" : "숨김"}
-            />
-          </FieldRow>
-        </div>
+        <PopupForm
+          form={form}
+          onChange={setForm}
+          targets={targets}
+          targetsLoading={targetsLoading}
+        />
         {formError && <Help tone="error">{formError}</Help>}
       </Modal>
 

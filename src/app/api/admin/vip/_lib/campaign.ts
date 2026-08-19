@@ -7,13 +7,19 @@ import { isUuid, jsonError, posInt } from "./validate";
    VIP 캠페인 공통 — 상품 큐레이션 검증
    ============================================================ */
 
-/** 목록 조회 select (상품 수 집계 포함) */
+/**
+ * 목록 조회 select.
+ * 예전에는 상품 개수만(count) 읽었는데, 목록에서 캠페인을 알아볼 단서가
+ * 제목과 난수 토큰뿐이라 토큰이 부제처럼 붙어 있었다. 토큰을 걷어내는 대신
+ * '상품 3개 · 평균 22% 할인' 같은 사람이 읽는 요약을 보여 주려면
+ * 담긴 상품의 캠페인가와 기본 판매가가 필요하다.
+ */
 export const CAMPAIGN_LIST_SELECT =
-  "*, vip_groups(id, name), profiles(id, name, email), vip_campaign_items(count)";
+  "*, vip_groups(id, name), profiles(id, name, email), vip_campaign_items(custom_price, products(price))";
 
-/** 상세 조회 select (큐레이션 상품 포함) */
+/** 상세 조회 select (큐레이션 상품 포함 — 원가는 마진 판단용, 고객 화면에는 나가지 않는다) */
 export const CAMPAIGN_DETAIL_SELECT =
-  "*, vip_groups(id, name), profiles(id, name, email), vip_campaign_items(id, product_id, custom_price, sort_order, products(id, name, price, status))";
+  "*, vip_groups(id, name), profiles(id, name, email), vip_campaign_items(id, product_id, custom_price, sort_order, products(id, name, price, cost_price, status))";
 
 export interface CampaignItemRow {
   product_id: string;
@@ -73,11 +79,30 @@ export async function validateCampaignItems(
     if (row.custom_price > product.price) {
       return {
         error: jsonError(
-          `'${product.name}'의 캠페인가는 정가 ${krw(product.price)}원을 넘을 수 없습니다.`
+          `'${product.name}'의 캠페인가는 기본 판매가 ${krw(product.price)}원을 넘을 수 없습니다.`
         ),
       };
     }
   }
 
   return { rows };
+}
+
+/** 목록 행에 붙일 요약 — 담긴 상품 수와 평균 할인율(%) */
+export function summarizeItems(
+  items: { custom_price: number; products: { price: number } | null }[] | null | undefined
+): { item_count: number; avg_discount_rate: number | null } {
+  const rows = items ?? [];
+  const rates: number[] = [];
+  for (const row of rows) {
+    const base = row.products?.price;
+    if (base && base > 0 && row.custom_price <= base) {
+      rates.push(((base - row.custom_price) / base) * 100);
+    }
+  }
+  return {
+    item_count: rows.length,
+    avg_discount_rate:
+      rates.length > 0 ? Math.round(rates.reduce((a, b) => a + b, 0) / rates.length) : null,
+  };
 }

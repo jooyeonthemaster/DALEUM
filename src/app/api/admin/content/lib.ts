@@ -2,6 +2,12 @@ import { NextResponse } from "next/server";
 import { revalidateTag } from "next/cache";
 import { requireAdmin } from "@/lib/auth";
 import { CACHE_TAGS } from "@/lib/cache";
+import { validateStoredLink } from "@/app/admin/content/_components/link-targets";
+
+/** 스토어프론트에 실제 렌더 지점이 있는 배너 자리 — 새로 만들 때는 여기서만 고를 수 있다 */
+const RENDERED_PLACEMENTS = ["hero"];
+/** 예전에 저장돼 있는 값들 — 고쳐서 홈 대문으로 옮길 수는 있어야 한다 */
+const LEGACY_PLACEMENTS = ["hero", "strip", "mid", "footer"];
 
 /**
  * 배너/팝업/공지 공용 CRUD 헬퍼 — 각 route.ts가 리소스 설정과 함께 호출한다.
@@ -56,15 +62,26 @@ export interface ContentResource {
 
 /* ---------- 필드 파서 ---------- */
 
-function str(v: unknown, max = 200): string | undefined {
-  if (typeof v !== "string") return undefined;
-  const s = v.trim();
-  return s.length <= max ? s : s.slice(0, max);
+/**
+ * 길이 초과를 **자르지 않고 거절**한다.
+ *
+ * 예전에는 `s.slice(0, max)` 로 조용히 잘라 저장했다. 관리자는 저장에 성공했다고
+ * 믿는데 고객 화면에는 문장이 중간에서 끊긴 채로 나간다 — 상품 폼에서 실제로
+ * 원재료명이 잘려 나가던 사고와 같은 종류다(api/admin/products/shared.ts 참고).
+ */
+function str(v: unknown): string {
+  return typeof v === "string" ? v.trim() : "";
 }
 
-function nullableStr(v: unknown, max = 500): string | null {
-  const s = typeof v === "string" ? v.trim() : "";
-  return s ? s.slice(0, max) : null;
+function tooLong(value: string, max: number, label: string): string | null {
+  return value.length > max
+    ? `${label}이(가) 너무 깁니다. ${max.toLocaleString("ko-KR")}자 이내로 줄여 주세요.`
+    : null;
+}
+
+function nullableStr(v: unknown): string | null {
+  const s = str(v);
+  return s ? s : null;
 }
 
 function iso(v: unknown): string | null | "invalid" {
@@ -119,23 +136,43 @@ export const BANNERS: ContentResource = {
     const out: Record<string, unknown> = {};
 
     if (body.title !== undefined || !partial) {
-      const title = str(body.title, 100);
+      const title = str(body.title);
       if (!title) return { error: "배너 제목을 입력해 주세요." };
+      const long = tooLong(title, 100, "배너 제목");
+      if (long) return { error: long };
       out.title = title;
     }
-    if (body.subtitle !== undefined) out.subtitle = nullableStr(body.subtitle, 200);
-    if (body.image_url !== undefined) out.image_url = nullableStr(body.image_url, 1000);
-    if (body.link_url !== undefined) out.link_url = nullableStr(body.link_url, 1000);
+    if (body.subtitle !== undefined) {
+      const subtitle = str(body.subtitle);
+      const long = tooLong(subtitle, 200, "작은 설명");
+      if (long) return { error: long };
+      out.subtitle = subtitle || null;
+    }
+    if (body.image_url !== undefined) out.image_url = nullableStr(body.image_url);
+    if (body.link_url !== undefined) {
+      // 죽은 링크는 화면에서 이미 막지만, API 를 직접 부르는 경로로도 들어오면 안 된다
+      const linkError = validateStoredLink(body.link_url);
+      if (linkError) return { error: linkError };
+      out.link_url = nullableStr(body.link_url);
+    }
 
     if (body.placement !== undefined || !partial) {
-      if (!["hero", "strip", "mid", "footer"].includes(body.placement as string)) {
-        return { error: "배너 위치가 올바르지 않습니다." };
+      // 새로 만들 때는 실제로 렌더되는 자리(홈 대문)만 허용한다.
+      // 'strip'/'mid'/'footer' 는 스토어프론트에 렌더 지점이 아예 없어서
+      // 만들어 두면 "활성인데 아무 데도 안 보이는" 배너가 된다.
+      // 다만 예전에 만들어 둔 행을 고칠 수는 있어야 하므로 부분 수정에서는 통과시킨다.
+      const allowed = partial ? LEGACY_PLACEMENTS : RENDERED_PLACEMENTS;
+      if (!allowed.includes(body.placement as string)) {
+        return {
+          error:
+            "지금 고객 화면에 배너가 나오는 자리는 '홈 대문' 하나뿐입니다. 홈 대문으로 골라 주세요.",
+        };
       }
       out.placement = body.placement;
     }
     if (body.text_theme !== undefined) {
       if (body.text_theme !== "dark" && body.text_theme !== "light") {
-        return { error: "텍스트 테마가 올바르지 않습니다." };
+        return { error: "글자 색 설정이 올바르지 않습니다." };
       }
       out.text_theme = body.text_theme;
     }
@@ -159,17 +196,28 @@ export const POPUPS: ContentResource = {
     const out: Record<string, unknown> = {};
 
     if (body.title !== undefined || !partial) {
-      const title = str(body.title, 100);
+      const title = str(body.title);
       if (!title) return { error: "팝업 제목을 입력해 주세요." };
+      const long = tooLong(title, 100, "팝업 제목");
+      if (long) return { error: long };
       out.title = title;
     }
-    if (body.image_url !== undefined) out.image_url = nullableStr(body.image_url, 1000);
-    if (body.content !== undefined) out.content = nullableStr(body.content, 2000);
-    if (body.link_url !== undefined) out.link_url = nullableStr(body.link_url, 1000);
+    if (body.image_url !== undefined) out.image_url = nullableStr(body.image_url);
+    if (body.content !== undefined) {
+      const content = str(body.content);
+      const long = tooLong(content, 2000, "팝업 본문");
+      if (long) return { error: long };
+      out.content = content || null;
+    }
+    if (body.link_url !== undefined) {
+      const linkError = validateStoredLink(body.link_url);
+      if (linkError) return { error: linkError };
+      out.link_url = nullableStr(body.link_url);
+    }
 
     if (body.position !== undefined) {
       if (!["center", "bottom-left", "bottom"].includes(body.position as string)) {
-        return { error: "팝업 위치가 올바르지 않습니다." };
+        return { error: "팝업이 뜨는 자리가 올바르지 않습니다." };
       }
       out.position = body.position;
     }
@@ -193,14 +241,18 @@ export const NOTICES: ContentResource = {
     const out: Record<string, unknown> = {};
 
     if (body.title !== undefined || !partial) {
-      const title = str(body.title, 150);
+      const title = str(body.title);
       if (!title) return { error: "공지 제목을 입력해 주세요." };
+      const long = tooLong(title, 150, "공지 제목");
+      if (long) return { error: long };
       out.title = title;
     }
     if (body.content !== undefined || !partial) {
-      const content = typeof body.content === "string" ? body.content.trim() : "";
+      const content = str(body.content);
       if (!content) return { error: "공지 내용을 입력해 주세요." };
-      out.content = content.slice(0, 10000);
+      const long = tooLong(content, 10000, "공지 내용");
+      if (long) return { error: long };
+      out.content = content;
     }
     if (body.is_pinned !== undefined) out.is_pinned = Boolean(body.is_pinned);
     if (body.is_active !== undefined) out.is_active = Boolean(body.is_active);

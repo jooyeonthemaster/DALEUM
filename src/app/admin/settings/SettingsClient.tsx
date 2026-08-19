@@ -1,96 +1,62 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+/* ============================================================
+   설정 화면
+
+   고친 것과 그 이유:
+   1) 영문 머리글 'SHIPPING'·'STORE' 를 없앴다. 그 문자열은 저장 요청에 실려 가는 내부 키와
+      같은 값이었고, 바로 아래 한국어 제목과 중복이라 화면이 미완성으로 보였다.
+   2) 'CS 전화' 회색 예시 문구를 값으로 착각하는 문제 — placeholder 를 '예: …' 로 바꾸고,
+      비어 있으면 입력칸 옆에 '미설정' 배지를 띄운다. 저장 전에 화면에서 먼저 막는다.
+   3) 각 항목이 **어디에 반영되는지**를 적었다. 배송비는 장바구니·상품 상세에 즉시 반영되지만,
+      스토어 정보는 지금 어느 화면도 읽지 않는다 — 그 사실을 숨기지 않고 그대로 말한다.
+      (고객 화면은 lib/constants.ts 의 고정값을 쓴다. 연결은 이 화면의 소관이 아니다.)
+   4) '도서산간 추가비' 도 같은 부류였다. 도움말이 '기본 배송비에 더해지는 금액' 이라고
+      단정했지만 결제 계산에는 한 푼도 붙지 않는다 — 안내 문장에만 쓰인다. 같은 형태의
+      경고를 붙였다. (3)과 (4)를 한 화면에서 다르게 말하면 어느 쪽을 믿어야 할지 모른다.
+
+   카드 셸·토스트·검증 규칙은 settings-ui.tsx 로 옮겼다.
+   ============================================================ */
+
+import { useCallback, useEffect, useState } from "react";
 import { FieldRow, Input, Help } from "@/components/admin/Field";
 import { krw } from "@/lib/format";
+import CompanyInfoCard from "./CompanyInfoCard";
+import {
+  EmptyBadge,
+  NotWiredNotice,
+  SectionCard,
+  Toast,
+  useToast,
+  validateStore,
+  type ShippingForm,
+  type StoreField,
+  type StoreForm,
+} from "./settings-ui";
 
-/* ---------- 타입 ---------- */
+/* ---------- 조각 ---------- */
 
-interface ShippingForm {
-  base_fee: string;
-  free_threshold: string;
-  island_extra: string;
-}
-
-interface StoreForm {
-  name: string;
-  cs_phone: string;
-  cs_hours: string;
-}
-
-/* ---------- 토스트 ---------- */
-
-function useToast() {
-  const [message, setMessage] = useState<string | null>(null);
-  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  const show = useCallback((msg: string) => {
-    setMessage(msg);
-    if (timer.current) clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(null), 2500);
-  }, []);
-
-  useEffect(() => {
-    return () => {
-      if (timer.current) clearTimeout(timer.current);
-    };
-  }, []);
-
-  return { message, show };
-}
-
-function Toast({ message }: { message: string | null }) {
-  if (!message) return null;
+/**
+ * '저장은 되지만 결제 금액에는 아직 반영되지 않는 값' 이라는 경고.
+ * settings-ui.tsx 의 NotWiredNotice 와 같은 생김새를 쓰되(관리자가 같은 뜻으로 읽어야 한다),
+ * 그 조각은 스토어 정보 전용 문구를 품고 있고 이번 파도에서 공용 파일은 손대지 않기로 해서
+ * 이 화면 안에 따로 둔다.
+ */
+function PartialWireNotice() {
   return (
-    <div
-      role="status"
-      aria-live="polite"
-      className="fixed bottom-6 left-1/2 z-[110] -translate-x-1/2 bg-forest-900 px-5 py-3 text-sm text-cream-50"
-    >
-      {message}
+    <div className="mt-2.5 flex gap-2.5 border border-ink-200 bg-cream-100 px-3 py-2.5">
+      <span aria-hidden className="mt-1 h-2 w-2 shrink-0 rounded-full bg-signal-amber" />
+      <div className="text-xs leading-relaxed text-ink-600">
+        <p className="font-medium text-ink-800">
+          이 금액은 아직 실제 결제 금액에 자동으로 더해지지 않습니다.
+        </p>
+        <p className="mt-1 text-ink-500">
+          지금은 상품 상세의 배송 안내 문구(&ldquo;도서산간은 추가 배송비가 발생할 수
+          있습니다&rdquo;)에만 쓰입니다. 제주·도서산간 주문의 추가 배송비는 따로 받아야 합니다.
+          결제에 자동으로 반영하려면 담당자에게 알려 주세요.
+        </p>
+      </div>
     </div>
-  );
-}
-
-/* ---------- 섹션 카드 ---------- */
-
-function SectionCard({
-  overline,
-  title,
-  description,
-  children,
-  onSave,
-  saving,
-  error,
-}: {
-  overline: string;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-  onSave: () => void;
-  saving: boolean;
-  error: string | null;
-}) {
-  return (
-    <section className="border border-ink-200 bg-cream-50">
-      <div className="border-b border-ink-100 px-6 py-5">
-        <p className="label-caps text-forest-600">{overline}</p>
-        <h2 className="mt-1.5 headline-serif text-lg text-ink-900">{title}</h2>
-        <p className="mt-1 text-xs text-ink-400">{description}</p>
-      </div>
-      <div className="divide-y divide-ink-100 px-6">{children}</div>
-      <div className="flex items-center justify-between gap-4 border-t border-ink-100 px-6 py-4">
-        <div>{error && <Help tone="error" className="mt-0">{error}</Help>}</div>
-        <button
-          type="button"
-          onClick={onSave}
-          disabled={saving}
-          className="shrink-0 bg-forest-700 px-5 py-2.5 text-sm text-cream-50 transition-colors hover:bg-forest-800 disabled:opacity-50"
-        >
-          {saving ? "저장 중…" : "저장"}
-        </button>
-      </div>
-    </section>
   );
 }
 
@@ -104,6 +70,7 @@ export default function SettingsClient() {
   const [savingKey, setSavingKey] = useState<"shipping" | "store" | null>(null);
   const [shippingError, setShippingError] = useState<string | null>(null);
   const [storeError, setStoreError] = useState<string | null>(null);
+  const [storeFieldErrors, setStoreFieldErrors] = useState<Partial<Record<StoreField, string>>>({});
 
   const { message, show } = useToast();
 
@@ -138,9 +105,29 @@ export default function SettingsClient() {
     void load();
   }
 
+  function editStore(field: StoreField, next: string) {
+    if (!store) return;
+    setStore({ ...store, [field]: next });
+    // 고치는 중에 빨간 테두리가 계속 떠 있으면 방해만 된다 — 손대는 순간 지운다
+    if (storeFieldErrors[field]) {
+      setStoreFieldErrors({ ...storeFieldErrors, [field]: undefined });
+    }
+  }
+
   async function save(key: "shipping" | "store") {
     const value = key === "shipping" ? shipping : store;
     if (!value) return;
+
+    if (key === "store") {
+      const errors = validateStore(value as StoreForm);
+      setStoreFieldErrors(errors);
+      const first = Object.values(errors)[0];
+      if (first) {
+        setStoreError(first);
+        return;
+      }
+    }
+
     setSavingKey(key);
     if (key === "shipping") setShippingError(null);
     else setStoreError(null);
@@ -152,7 +139,13 @@ export default function SettingsClient() {
         body: JSON.stringify({ key, value }),
       });
       const body = await res.json();
-      if (!res.ok) throw new Error(body?.error ?? "저장에 실패했습니다.");
+      if (!res.ok) {
+        // 서버가 어느 칸이 문제인지 알려 주면 그 칸을 빨갛게 표시한다
+        if (key === "store" && typeof body?.field === "string") {
+          setStoreFieldErrors({ [body.field as StoreField]: body.error });
+        }
+        throw new Error(body?.error ?? "저장에 실패했습니다.");
+      }
       show(key === "shipping" ? "배송 설정을 저장했습니다." : "스토어 정보를 저장했습니다.");
     } catch (e) {
       const msg = e instanceof Error ? e.message : "저장에 실패했습니다.";
@@ -189,19 +182,23 @@ export default function SettingsClient() {
   }
 
   const freeThreshold = Number(shipping.free_threshold);
+  const invalid = "border-signal-red";
 
   return (
     <div className="mx-auto max-w-3xl space-y-6">
       {/* ---------- 배송 설정 ---------- */}
       <SectionCard
-        overline="Shipping"
         title="배송 설정"
-        description="주문 금액에 따른 배송비 계산에 바로 반영됩니다."
+        description="저장하면 장바구니와 상품 상세의 배송비 안내에 바로 반영됩니다."
         onSave={() => save("shipping")}
         saving={savingKey === "shipping"}
         error={shippingError}
       >
-        <FieldRow label="기본 배송비" htmlFor="ship-base" help="할인 반영 후 상품 합계가 무료 기준 미만일 때 부과됩니다.">
+        <FieldRow
+          label="기본 배송비"
+          htmlFor="ship-base"
+          help="할인 반영 후 상품 합계가 무료 기준 미만일 때 부과됩니다."
+        >
           <div className="flex items-center gap-2">
             <Input
               id="ship-base"
@@ -219,8 +216,8 @@ export default function SettingsClient() {
           htmlFor="ship-free"
           help={
             Number.isFinite(freeThreshold) && freeThreshold > 0
-              ? `${krw(freeThreshold)}원 이상 주문 시 배송비가 무료가 됩니다.`
-              : "0이면 모든 주문이 무료배송됩니다."
+              ? `${krw(freeThreshold)}원 이상 주문하면 배송비를 받지 않습니다.`
+              : "0으로 두면 모든 주문이 무료배송이 됩니다."
           }
         >
           <div className="flex items-center gap-2">
@@ -235,7 +232,7 @@ export default function SettingsClient() {
             <span className="text-sm text-ink-500">원</span>
           </div>
         </FieldRow>
-        <FieldRow label="도서산간 추가비" htmlFor="ship-island" help="제주/도서산간 지역 배송 시 추가되는 금액입니다.">
+        <FieldRow label="도서산간 추가비" htmlFor="ship-island">
           <div className="flex items-center gap-2">
             <Input
               id="ship-island"
@@ -247,44 +244,87 @@ export default function SettingsClient() {
             />
             <span className="text-sm text-ink-500">원</span>
           </div>
+          {/* 옛 도움말은 '기본 배송비에 더해지는 금액입니다' 라고 단정했다. 사실이 아니다 —
+              결제 배송비를 계산하는 곳(lib/shipping.ts calcShippingFee)은 이 값을 아예 보지
+              않고, 무료배송 기준 미만이면 기본 배송비만 붙인다. 이 숫자를 읽는 곳은 상품 상세
+              배송 안내의 '추가 배송비 N원이 발생할 수 있습니다' 문장 한 곳뿐이다.
+              올렸는데 결제액은 그대로인 것을 뒤늦게 알면 그 차액은 전부 손실이므로,
+              스토어 정보 카드가 그러듯 연결되지 않았다는 사실을 숨기지 않고 그대로 말한다. */}
+          <PartialWireNotice />
         </FieldRow>
       </SectionCard>
 
       {/* ---------- 스토어 정보 ---------- */}
       <SectionCard
-        overline="Store"
         title="스토어 정보"
-        description="고객센터 안내 등 스토어 곳곳에 표시되는 정보입니다."
+        description="고객센터 안내에 쓰려고 적어 두는 값입니다."
         onSave={() => save("store")}
         saving={savingKey === "store"}
         error={storeError}
       >
-        <FieldRow label="스토어 이름" htmlFor="store-name">
-          <Input
-            id="store-name"
-            className="max-w-60"
-            value={store.name}
-            onChange={(e) => setStore({ ...store, name: e.target.value })}
-          />
+        {/* 저장은 되지만 고객 화면은 아직 이 값을 읽지 않는다 — 그 사실을 화면에 적어 둔다 */}
+        <NotWiredNotice />
+
+        <FieldRow
+          label="스토어 이름"
+          htmlFor="store-name"
+          help="주문·안내 문구에서 스토어를 부르는 이름입니다."
+        >
+          <div className="flex flex-wrap items-center gap-1">
+            <Input
+              id="store-name"
+              className={`max-w-60 ${storeFieldErrors.name ? invalid : ""}`}
+              value={store.name}
+              aria-invalid={Boolean(storeFieldErrors.name)}
+              onChange={(e) => editStore("name", e.target.value)}
+              placeholder="예: 다름"
+            />
+            {store.name.trim().length === 0 && <EmptyBadge />}
+          </div>
+          {storeFieldErrors.name && <Help tone="error">{storeFieldErrors.name}</Help>}
         </FieldRow>
-        <FieldRow label="CS 전화" htmlFor="store-phone">
-          <Input
-            id="store-phone"
-            className="max-w-60"
-            value={store.cs_phone}
-            onChange={(e) => setStore({ ...store, cs_phone: e.target.value })}
-            placeholder="031-963-3375"
-          />
+
+        <FieldRow
+          label="고객센터 전화번호"
+          htmlFor="store-phone"
+          help="고객이 문의할 때 거는 번호입니다. 숫자와 하이픈(-)만 넣어 주세요."
+        >
+          <div className="flex flex-wrap items-center gap-1">
+            <Input
+              id="store-phone"
+              className={`max-w-60 ${storeFieldErrors.cs_phone ? invalid : ""}`}
+              value={store.cs_phone}
+              aria-invalid={Boolean(storeFieldErrors.cs_phone)}
+              onChange={(e) => editStore("cs_phone", e.target.value)}
+              placeholder="예: 031-963-3375"
+            />
+            {store.cs_phone.trim().length === 0 && <EmptyBadge />}
+          </div>
+          {storeFieldErrors.cs_phone && <Help tone="error">{storeFieldErrors.cs_phone}</Help>}
         </FieldRow>
-        <FieldRow label="운영시간" htmlFor="store-hours">
-          <Input
-            id="store-hours"
-            value={store.cs_hours}
-            onChange={(e) => setStore({ ...store, cs_hours: e.target.value })}
-            placeholder="평일 10:00 – 17:00 (점심 12:00 – 13:00)"
-          />
+
+        <FieldRow
+          label="고객센터 운영시간"
+          htmlFor="store-hours"
+          help="전화를 받을 수 있는 요일과 시간을 적어 주세요."
+        >
+          <div className="flex flex-wrap items-center gap-1">
+            <Input
+              id="store-hours"
+              className={`max-w-96 ${storeFieldErrors.cs_hours ? invalid : ""}`}
+              value={store.cs_hours}
+              aria-invalid={Boolean(storeFieldErrors.cs_hours)}
+              onChange={(e) => editStore("cs_hours", e.target.value)}
+              placeholder="예: 평일 10:00 – 17:00 (점심 12:00 – 13:00)"
+            />
+            {store.cs_hours.trim().length === 0 && <EmptyBadge />}
+          </div>
+          {storeFieldErrors.cs_hours && <Help tone="error">{storeFieldErrors.cs_hours}</Help>}
         </FieldRow>
       </SectionCard>
+
+      {/* 법정 표기 항목 — 고객이 실제로 보고 있는 값을 확인만 할 수 있게 둔다 */}
+      <CompanyInfoCard />
 
       <Toast message={message} />
     </div>

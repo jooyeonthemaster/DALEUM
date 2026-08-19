@@ -1,63 +1,51 @@
 "use client";
 
+/* ============================================================
+   카테고리 관리 — 목록·순서·노출·삭제.
+
+   이 화면이 결정하는 것은 카테고리 이름이 아니라 **고객이 홈에서 무엇을 먼저 보는가** 다.
+   순서 1번이 홈의 큰 사진이 되고, 홈에는 앞에서 8개까지만 나온다(CategoryShowcase).
+   전에는 그 인과를 화면이 한마디도 하지 않아서, 새 카테고리를 만들어 놓고
+   "홈에 왜 안 나오지" 를 풀 수 없었다. 그래서 안내문과 뱃지로 그 사실을 드러낸다.
+
+   순서 저장은 화살표를 누를 때마다 요청을 흘려 보내던 것을 끊고, 저장이 끝날 때까지
+   조작을 잠근다. 전에는 연타하면 서로 다른 순서를 담은 요청이 동시에 떠서
+   두 카테고리가 같은 순서값을 갖는 일이 생겼고, 그러면 고객 탭 순서가 새로고침마다 달라졌다.
+   ============================================================ */
+
 import { useEffect, useState } from "react";
-import Image from "next/image";
-import { ChevronDown, ChevronUp } from "lucide-react";
-import Modal from "@/components/admin/Modal";
+import { ExternalLink } from "lucide-react";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
-import ImageUploader from "@/components/admin/ImageUploader";
-import { FieldRow, Input, Textarea, Toggle } from "@/components/admin/Field";
-import { krw, slugify } from "@/lib/format";
+import { BTN_GHOST, BTN_PRIMARY } from "@/app/admin/products/product-ui";
+import CategoryDeleteDialog from "./CategoryDeleteDialog";
+import CategoryEditorModal from "./CategoryEditorModal";
+import CategoryListRow from "./CategoryListRow";
 import {
-  BTN_GHOST,
-  BTN_PRIMARY,
-} from "@/app/admin/products/product-ui";
-
-interface CategoryRow {
-  id: string;
-  slug: string;
-  name: string;
-  description: string | null;
-  image_url: string | null;
-  sort_order: number;
-  is_active: boolean;
-  created_at: string;
-  product_count: number;
-}
-
-interface EditorState {
-  id: string | null; // null이면 신규
-  name: string;
-  slug: string;
-  description: string;
-  image_url: string | null;
-  is_active: boolean;
-  slugTouched: boolean;
-}
-
-const EMPTY_EDITOR: EditorState = {
-  id: null,
-  name: "",
-  slug: "",
-  description: "",
-  image_url: null,
-  is_active: true,
-  slugTouched: false,
-};
-
-// 한글 slug 는 라우트에서 퍼센트 인코딩된 채 조회돼 상세페이지가 404 가 된다 — ASCII 만 허용한다.
-const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+  HIDE_WITH_PRODUCTS_WARNING,
+  HOME_TILE_LIMIT,
+  ORDER_GUIDE,
+  ORDER_HOW_TO,
+  homePositions,
+  type CategoryRow,
+} from "./category-types";
 
 export default function CategoriesClient() {
   // rows === null 이면 로딩 중 (스켈레톤)
   const [rows, setRows] = useState<CategoryRow[] | null>(null);
   const [banner, setBanner] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const loading = rows === null;
 
-  const [editor, setEditor] = useState<EditorState | null>(null);
-  const [editorError, setEditorError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  /** 편집 창 — { row: null } 이면 새 카테고리 */
+  const [editing, setEditing] = useState<{ row: CategoryRow | null } | null>(null);
   const [deleting, setDeleting] = useState<CategoryRow | null>(null);
+  /** 숨김으로 내리기 전 확인이 필요한 행 */
+  const [hideTarget, setHideTarget] = useState<CategoryRow | null>(null);
+  /** 순서 저장 중에는 모든 순서 조작을 잠근다 */
+  const [busy, setBusy] = useState(false);
+
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [overIndex, setOverIndex] = useState<number | null>(null);
 
   // tick 증가로 재조회 트리거
   const [tick, setTick] = useState(0);
@@ -88,125 +76,130 @@ export default function CategoriesClient() {
     };
   }, [tick]);
 
-  /** 위/아래 이동 — 낙관적 반영 후 전체 순서 저장 */
-  async function move(index: number, dir: -1 | 1) {
-    if (!rows) return;
+  /** 새 순서를 낙관적으로 반영하고 한 번에 저장한다 */
+  async function persistOrder(next: CategoryRow[], previous: CategoryRow[]) {
+    setRows(next);
+    setBusy(true);
+    setNotice(null);
+    try {
+      const res = await fetch("/api/admin/categories", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ order: next.map((c) => c.id) }),
+      });
+      const data = (await res.json().catch(() => null)) as { error?: string } | null;
+      if (!res.ok) throw new Error(data?.error ?? "순서를 저장하지 못했습니다.");
+      setBanner(null);
+      setNotice("순서를 저장했습니다. 고객 화면에도 바로 반영됩니다.");
+    } catch (e) {
+      // 되돌린 화면이 서버와 또 어긋날 수 있으니 목록을 다시 받아 맞춘다
+      setRows(previous);
+      setBanner(
+        `${e instanceof Error ? e.message : "순서를 저장하지 못했습니다."} 화면을 원래 순서로 되돌렸습니다.`
+      );
+      reload();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function move(index: number, dir: -1 | 1) {
+    if (!rows || busy) return;
     const target = index + dir;
     if (target < 0 || target >= rows.length) return;
     const next = [...rows];
     [next[index], next[target]] = [next[target], next[index]];
-    const prev = rows;
-    setRows(next);
-    const res = await fetch("/api/admin/categories", {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ order: next.map((c) => c.id) }),
-    });
-    if (!res.ok) {
-      setRows(prev);
-      setBanner("순서 변경에 실패했습니다.");
-    }
+    void persistOrder(next, rows);
+  }
+
+  function reorder(from: number, to: number) {
+    if (!rows || busy || from === to) return;
+    const next = [...rows];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    void persistOrder(next, rows);
   }
 
   /** 노출 토글 — 낙관적 반영 */
-  async function toggleActive(row: CategoryRow, active: boolean) {
+  async function applyActive(row: CategoryRow, active: boolean) {
     if (!rows) return;
-    const prev = rows;
+    const previous = rows;
     setRows(rows.map((r) => (r.id === row.id ? { ...r, is_active: active } : r)));
+    setNotice(null);
     const res = await fetch(`/api/admin/categories/${row.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ is_active: active }),
     });
     if (!res.ok) {
-      setRows(prev);
-      setBanner("노출 상태 변경에 실패했습니다.");
+      setRows(previous);
+      setBanner("노출 상태를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }
 
-  function openNew() {
-    setEditorError(null);
-    setEditor({ ...EMPTY_EDITOR });
-  }
-
-  function openEdit(row: CategoryRow) {
-    setEditorError(null);
-    setEditor({
-      id: row.id,
-      name: row.name,
-      slug: row.slug,
-      description: row.description ?? "",
-      image_url: row.image_url,
-      is_active: row.is_active,
-      slugTouched: true,
-    });
-  }
-
-  async function saveEditor() {
-    if (!editor) return;
-    const name = editor.name.trim();
-    const slug = editor.slug.trim();
-    if (!name) {
-      setEditorError("카테고리 이름을 입력해 주세요.");
+  /** 상품이 팔리고 있는 카테고리를 내릴 때는 무슨 일이 벌어지는지 먼저 알린다 */
+  function requestToggle(row: CategoryRow, active: boolean) {
+    if (!active && row.visible_count > 0) {
+      setHideTarget(row);
       return;
     }
-    if (!slug || !SLUG_RE.test(slug)) {
-      setEditorError("URL 슬러그는 영문 소문자·숫자·하이픈만 사용할 수 있습니다 (한글 불가).");
-      return;
-    }
-    setSaving(true);
-    setEditorError(null);
-    try {
-      const res = await fetch(
-        editor.id ? `/api/admin/categories/${editor.id}` : "/api/admin/categories",
-        {
-          method: editor.id ? "PATCH" : "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            name,
-            slug,
-            description: editor.description.trim() || null,
-            image_url: editor.image_url,
-            is_active: editor.is_active,
-          }),
-        }
-      );
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-      if (!res.ok) throw new Error(data?.error ?? "저장에 실패했습니다.");
-      setEditor(null);
-      reload();
-    } catch (e) {
-      setEditorError(e instanceof Error ? e.message : "저장에 실패했습니다.");
-    } finally {
-      setSaving(false);
-    }
+    void applyActive(row, active);
   }
 
-  async function doDelete() {
-    if (!deleting) return;
-    const res = await fetch(`/api/admin/categories/${deleting.id}`, { method: "DELETE" });
-    if (!res.ok) {
-      const data = (await res.json().catch(() => null)) as { error?: string } | null;
-      setBanner(data?.error ?? "카테고리 삭제에 실패했습니다.");
-      return;
-    }
-    reload();
-  }
+  const list = rows ?? [];
+  /* 홈 타일 자리는 목록 자리와 다르다 — 홈에는 노출 카테고리만 내려간다.
+     한 곳에서 계산해 목록 행과 편집 창이 같은 값을 보게 한다. */
+  const homeIndexes = homePositions(list);
+  const activeCount = homeIndexes.filter((i) => i !== null).length;
 
   return (
     <div>
-      <div className="mb-6 flex items-center justify-between gap-3">
-        <p className="text-sm text-ink-600">
-          위/아래 버튼으로 스토어에 표시되는 순서를 조정할 수 있습니다.
-        </p>
-        <button type="button" onClick={openNew} className={`${BTN_PRIMARY} whitespace-nowrap`}>
-          새 카테고리
-        </button>
+      <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
+        <div className="max-w-2xl">
+          <p className="text-sm leading-relaxed text-ink-600">{ORDER_GUIDE}</p>
+          <p className="mt-1 text-xs text-ink-400">{ORDER_HOW_TO}</p>
+          {/* 숫자를 직접 보여 준다 — "8개까지" 라는 규칙만으로는 지금 몇 개가 넘치는지 알 수 없다 */}
+          {!loading && list.length > 0 && (
+            <p className="mt-1 text-xs text-ink-500">
+              지금 고객에게 노출 중인 카테고리 {activeCount}개 중 홈 화면에는{" "}
+              {Math.min(activeCount, HOME_TILE_LIMIT)}개가 나옵니다.
+              {activeCount > HOME_TILE_LIMIT && (
+                <span className="text-signal-amber">
+                  {" "}
+                  나머지 {activeCount - HOME_TILE_LIMIT}개는 홈에 보이지 않습니다.
+                </span>
+              )}
+            </p>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <a
+            href="/"
+            target="_blank"
+            rel="noreferrer"
+            className={`${BTN_GHOST} inline-flex items-center gap-1.5 whitespace-nowrap`}
+          >
+            <ExternalLink size={15} strokeWidth={1.5} />
+            홈 화면 미리보기
+          </a>
+          <button
+            type="button"
+            onClick={() => setEditing({ row: null })}
+            className={`${BTN_PRIMARY} whitespace-nowrap`}
+          >
+            새 카테고리
+          </button>
+        </div>
       </div>
 
       {banner && (
         <p className="mb-4 border border-ink-200 bg-cream-100 px-4 py-3 text-sm text-signal-red">
           {banner}
+        </p>
+      )}
+      {notice && (
+        <p className="mb-4 border border-forest-200 bg-forest-50 px-4 py-3 text-sm text-forest-700">
+          {notice}
         </p>
       )}
 
@@ -216,208 +209,103 @@ export default function CategoriesClient() {
             <li key={i} className="h-20 animate-pulse border border-ink-200 bg-cream-100" />
           ))}
         </ul>
-      ) : (rows ?? []).length === 0 ? (
+      ) : list.length === 0 ? (
         <div className="border border-ink-200 py-20 text-center">
           <p className="headline-serif text-lg text-ink-500">아직 카테고리가 없습니다.</p>
-          <button type="button" onClick={openNew} className={`${BTN_GHOST} mt-5`}>
+          <button
+            type="button"
+            onClick={() => setEditing({ row: null })}
+            className={`${BTN_GHOST} mt-5`}
+          >
             첫 카테고리 만들기
           </button>
         </div>
       ) : (
-        <ul className="divide-y divide-ink-100 border border-ink-200 bg-cream-50">
-          {(rows ?? []).map((row, i) => (
-            <li key={row.id} className="flex items-center gap-3 px-4 py-3.5 sm:gap-4">
-              {/* 순서 조절 */}
-              <div className="flex flex-col">
-                <button
-                  type="button"
-                  onClick={() => void move(i, -1)}
-                  disabled={i === 0}
-                  aria-label={`${row.name} 위로 이동`}
-                  className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
-                >
-                  <ChevronUp size={16} strokeWidth={1.5} />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void move(i, 1)}
-                  disabled={i === (rows ?? []).length - 1}
-                  aria-label={`${row.name} 아래로 이동`}
-                  className="p-1 text-ink-400 transition-colors hover:text-forest-700 disabled:opacity-25"
-                >
-                  <ChevronDown size={16} strokeWidth={1.5} />
-                </button>
-              </div>
-
-              {/* 이미지 */}
-              <div className="relative hidden h-12 w-12 shrink-0 overflow-hidden border border-ink-200 bg-cream-100 sm:block">
-                {row.image_url ? (
-                  <Image
-                    src={row.image_url}
-                    alt={row.name}
-                    fill
-                    sizes="48px"
-                    className="object-cover"
-                  />
-                ) : (
-                  <span className="flex h-full w-full items-center justify-center text-[10px] text-ink-300">
-                    No img
-                  </span>
-                )}
-              </div>
-
-              {/* 이름/slug/설명 */}
-              <div className="min-w-0 flex-1">
-                <div className="flex items-baseline gap-2">
-                  <p className="truncate font-medium text-ink-900">{row.name}</p>
-                  <span className="truncate text-xs text-ink-400">/{row.slug}</span>
-                </div>
-                {row.description && (
-                  <p className="mt-0.5 truncate text-xs text-ink-500">{row.description}</p>
-                )}
-              </div>
-
-              {/* 상품 수 */}
-              <p className="hidden shrink-0 text-sm text-ink-600 sm:block">
-                상품 <span className="krw font-medium">{krw(row.product_count)}</span>개
-              </p>
-
-              {/* 노출 토글 */}
-              <Toggle
-                checked={row.is_active}
-                onChange={(v) => void toggleActive(row, v)}
-                label={row.is_active ? "노출" : "숨김"}
-                className="shrink-0 [&>span+span]:hidden sm:[&>span+span]:inline"
-              />
-
-              <button
-                type="button"
-                onClick={() => openEdit(row)}
-                className="shrink-0 border border-ink-200 px-3 py-2 text-xs text-ink-600 transition-colors hover:bg-cream-100"
-              >
-                수정
-              </button>
-            </li>
+        <ul
+          className={`divide-y divide-ink-100 border border-ink-200 bg-cream-50 ${
+            busy ? "pointer-events-none opacity-60" : ""
+          }`}
+        >
+          {list.map((row, i) => (
+            <CategoryListRow
+              key={row.id}
+              row={row}
+              index={i}
+              homeIndex={homeIndexes[i]}
+              total={list.length}
+              busy={busy}
+              onMove={(dir) => move(i, dir)}
+              onToggle={(next) => requestToggle(row, next)}
+              onEdit={() => setEditing({ row })}
+              dragging={dragIndex === i}
+              dropTarget={overIndex === i && dragIndex !== null && dragIndex !== i}
+              dragHandlers={{
+                onDragStart: () => setDragIndex(i),
+                onDragOver: (e) => {
+                  e.preventDefault();
+                  setOverIndex(i);
+                },
+                onDrop: () => {
+                  if (dragIndex !== null) reorder(dragIndex, i);
+                  setDragIndex(null);
+                  setOverIndex(null);
+                },
+                onDragEnd: () => {
+                  setDragIndex(null);
+                  setOverIndex(null);
+                },
+              }}
+            />
           ))}
         </ul>
       )}
 
-      {/* 추가/수정 모달 */}
-      <Modal
-        open={editor !== null}
-        onClose={() => (saving ? undefined : setEditor(null))}
-        title={editor?.id ? "카테고리 수정" : "새 카테고리"}
-        footer={
-          <>
-            {editor?.id && (
-              <button
-                type="button"
-                onClick={() => {
-                  const row = (rows ?? []).find((r) => r.id === editor.id);
-                  if (row) {
-                    setEditor(null);
-                    setDeleting(row);
-                  }
-                }}
-                disabled={saving}
-                className="mr-auto text-sm text-ink-400 transition-colors hover:text-signal-red disabled:opacity-50"
-              >
-                삭제
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => setEditor(null)}
-              disabled={saving}
-              className={BTN_GHOST}
-            >
-              취소
-            </button>
-            <button
-              type="button"
-              onClick={() => void saveEditor()}
-              disabled={saving}
-              className={BTN_PRIMARY}
-            >
-              {saving ? "저장 중…" : "저장"}
-            </button>
-          </>
-        }
-      >
-        {editor && (
-          <div className="divide-y divide-ink-100">
-            <FieldRow label="이름" required htmlFor="c-name">
-              <Input
-                id="c-name"
-                value={editor.name}
-                onChange={(e) =>
-                  setEditor({
-                    ...editor,
-                    name: e.target.value,
-                    ...(editor.id === null && !editor.slugTouched
-                      ? { slug: slugify(e.target.value) }
-                      : {}),
-                  })
-                }
-                placeholder="예: 곤약면"
-              />
-            </FieldRow>
-            <FieldRow
-              label="URL 슬러그"
-              required
-              htmlFor="c-slug"
-              help="영문 소문자·숫자·하이픈만 씁니다(한글 불가). 기존 카테고리의 슬러그를 바꾸면 주소가 함께 바뀌고, 옛 주소로 들어온 방문자는 리다이렉트 없이 전체 목록으로 떨어집니다."
-            >
-              <Input
-                id="c-slug"
-                value={editor.slug}
-                onChange={(e) => setEditor({ ...editor, slug: e.target.value, slugTouched: true })}
-                placeholder="예: konjac-rice, grain-rice"
-              />
-            </FieldRow>
-            <FieldRow label="설명" htmlFor="c-desc">
-              <Textarea
-                id="c-desc"
-                rows={3}
-                value={editor.description}
-                onChange={(e) => setEditor({ ...editor, description: e.target.value })}
-                placeholder="카테고리 페이지 상단에 표시되는 소개 문구"
-              />
-            </FieldRow>
-            <FieldRow label="대표 이미지">
-              <ImageUploader
-                value={editor.image_url ? [{ url: editor.image_url }] : []}
-                onChange={(next) => setEditor({ ...editor, image_url: next[0]?.url ?? null })}
-                bucket="products"
-                prefix="categories"
-                multiple={false}
-              />
-            </FieldRow>
-            <FieldRow label="노출">
-              <Toggle
-                checked={editor.is_active}
-                onChange={(v) => setEditor({ ...editor, is_active: v })}
-                label="스토어에 노출"
-              />
-            </FieldRow>
-            {editorError && <p className="pt-3 text-sm text-signal-red">{editorError}</p>}
-          </div>
-        )}
-      </Modal>
+      {editing && (
+        <CategoryEditorModal
+          // 다른 행을 열 때 입력값이 남지 않도록 행마다 새로 마운트한다
+          key={editing.row?.id ?? "new"}
+          row={editing.row}
+          siblings={list}
+          onClose={() => setEditing(null)}
+          onSaved={(message) => {
+            setEditing(null);
+            setBanner(null);
+            setNotice(message);
+            reload();
+          }}
+          onRequestDelete={(row) => {
+            setEditing(null);
+            setDeleting(row);
+          }}
+        />
+      )}
 
-      {/* 삭제 확인 */}
+      {deleting && (
+        <CategoryDeleteDialog
+          row={deleting}
+          siblings={list}
+          onClose={() => setDeleting(null)}
+          onDeleted={(message) => {
+            setDeleting(null);
+            setNotice(message);
+            reload();
+          }}
+        />
+      )}
+
       <ConfirmDialog
-        open={deleting !== null}
-        onClose={() => setDeleting(null)}
-        onConfirm={doDelete}
-        title="카테고리 삭제"
+        open={hideTarget !== null}
+        onClose={() => setHideTarget(null)}
+        onConfirm={async () => {
+          if (hideTarget) await applyActive(hideTarget, false);
+        }}
+        title="카테고리를 숨길까요?"
         description={
-          deleting
-            ? `'${deleting.name}' 카테고리를 삭제하시겠습니까?\n소속 상품 ${krw(deleting.product_count)}개는 삭제되지 않고 미분류로 변경됩니다.`
+          hideTarget
+            ? `'${hideTarget.name}' 에는 고객에게 보이는 상품이 ${hideTarget.visible_count}개 있습니다.\n\n${HIDE_WITH_PRODUCTS_WARNING}`
             : ""
         }
-        confirmLabel="삭제"
-        danger
+        confirmLabel="숨기기"
       />
     </div>
   );

@@ -13,8 +13,15 @@ import type { OrderStatus } from "@/lib/types";
  *   statusCounts: Record<OrderStatus, number>,
  *   lowStock: { id, name, stock, low_stock_threshold }[],
  *   recentOrders: { id, order_no, orderer_name, total, status, created_at }[],
- *   dailySales: { date, sales, orders }[]               // 최근 7일, KST 일자별
+ *   dailySales: { date, sales, orders }[],              // 최근 7일, KST 일자별
+ *   todo: { refundRequested, paid, reviewsPending, inquiriesNew, emptyDetail, lowStock }
  * }
+ *
+ * todo 를 따로 내리는 이유:
+ * 대시보드가 "오늘 무엇을 해야 하는지" 를 한 줄로 말해 주려면, 처리 대기 건수가
+ * 좌측 메뉴 여섯 곳에 흩어져 있으면 안 된다. 대표가 아침에 화면 하나만 보고
+ * 환불 요청·리뷰 답글·견적 문의가 밀렸는지 알 수 있어야 해서 여기서 함께 센다.
+ * (기존에는 statusCounts.paid 하나만 배너로 떴고 나머지는 알림 자체가 없었다.)
  *
  * 매출 = 결제가 완료된 상태(paid 이상)의 total 합.
  * refund_requested는 아직 환불 전(돈이 들어와 있는 상태)이므로 포함한다.
@@ -101,8 +108,18 @@ export async function GET() {
   const weekStart = kstDayStartUtc(6);
 
   try {
-    const [weekOrders, newTodayRes, newWeekRes, lowStockRes, recentRes, ...statusRes] =
-      await Promise.all([
+    const [
+      weekOrders,
+      newTodayRes,
+      newWeekRes,
+      lowStockRes,
+      recentRes,
+      reviewsPendingRes,
+      inquiriesNewRes,
+      detailNullRes,
+      detailBlankRes,
+      ...statusRes
+    ] = await Promise.all([
         // 최근 7일 매출 주문 (KPI + 일별 차트 공용)
         fetchWeekOrders(service, weekStart),
         service
@@ -125,6 +142,29 @@ export async function GET() {
           .select("id, order_no, orderer, total, status, created_at")
           .order("created_at", { ascending: false })
           .limit(10),
+        // 답글을 기다리는 리뷰 — 숨긴 리뷰는 답글이 필요 없으므로 제외한다
+        service
+          .from("reviews")
+          .select("id", { count: "exact", head: true })
+          .is("admin_reply", null)
+          .eq("is_hidden", false),
+        // 아직 손대지 않은 업소용·OEM 견적 문의
+        service
+          .from("bulk_inquiries")
+          .select("id", { count: "exact", head: true })
+          .eq("status", "new"),
+        // 상세페이지가 비어 있는 판매 상품 — null 과 빈 문자열은 PostgREST 에서
+        // 한 필터로 묶을 수 없어(or 구문은 값에 콤마가 섞이면 깨진다) 두 번 센다.
+        service
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["active", "sold_out"])
+          .is("description", null),
+        service
+          .from("products")
+          .select("id", { count: "exact", head: true })
+          .in("status", ["active", "sold_out"])
+          .eq("description", ""),
         ...ALL_STATUSES.map((s) =>
           service.from("orders").select("id", { count: "exact", head: true }).eq("status", s)
         ),
@@ -149,10 +189,11 @@ export async function GET() {
       ALL_STATUSES.map((s, i) => [s, statusRes[i]?.count ?? 0])
     ) as Record<OrderStatus, number>;
 
-    // 재고 임박 (임계치 이하)
-    const lowStock = ((lowStockRes.data ?? []) as ProductRow[])
-      .filter((p) => p.stock <= p.low_stock_threshold)
-      .slice(0, 8);
+    // 재고 임박 (임계치 이하) — 카드에는 8개만 보여 주지만 '할 일' 숫자는 전체 건수여야 한다
+    const lowStockAll = ((lowStockRes.data ?? []) as ProductRow[]).filter(
+      (p) => p.stock <= p.low_stock_threshold
+    );
+    const lowStock = lowStockAll.slice(0, 8);
 
     // 최근 7일 일별 매출 (빈 날짜 0으로 채움)
     const daily = new Map<string, { sales: number; orders: number }>();
@@ -185,6 +226,14 @@ export async function GET() {
       lowStock,
       recentOrders,
       dailySales,
+      todo: {
+        refundRequested: statusCounts.refund_requested ?? 0,
+        paid: statusCounts.paid ?? 0,
+        reviewsPending: reviewsPendingRes.count ?? 0,
+        inquiriesNew: inquiriesNewRes.count ?? 0,
+        emptyDetail: (detailNullRes.count ?? 0) + (detailBlankRes.count ?? 0),
+        lowStock: lowStockAll.length,
+      },
     });
   } catch (e) {
     console.error("[admin/dashboard]", e);

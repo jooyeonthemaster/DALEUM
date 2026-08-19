@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdmin } from "@/lib/auth";
+import { VIP_BASE_PRICE_LABEL } from "@/lib/admin-labels";
 import { krw } from "@/lib/format";
 import { isUuid, isoDate, jsonError, posInt, rateNum, readBody } from "../../_lib/validate";
 
@@ -12,7 +13,7 @@ const PRICE_SELECT =
 
 /**
  * PATCH — { custom_price? | discount_rate?, starts_at?, ends_at?, is_active? }
- * custom_price를 보내면 지정가 모드로, discount_rate를 보내면 할인율 모드로 전환된다.
+ * custom_price를 보내면 값을 직접 정하는 모드로, discount_rate를 보내면 할인율 모드로 전환된다.
  */
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const auth = await requireAdmin();
@@ -38,13 +39,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const hasPrice = "custom_price" in body && body.custom_price !== null && body.custom_price !== "";
   const hasRate = "discount_rate" in body && body.discount_rate !== null && body.discount_rate !== "";
   if (hasPrice && hasRate) {
-    return jsonError("지정가와 할인율은 동시에 설정할 수 없습니다.");
+    return jsonError("‘적용할 가격’과 ‘할인율’은 함께 정할 수 없습니다. 하나만 골라 주세요.");
   }
   if (hasPrice) {
     const price = posInt(body.custom_price);
-    if (price === undefined) return jsonError("지정가는 1원 이상의 정수여야 합니다.");
+    if (price === undefined) return jsonError("적용할 가격은 1원 이상의 정수로 넣어 주세요.");
     if (product && price > product.price) {
-      return jsonError(`'${product.name}'의 지정가는 정가 ${krw(product.price)}원을 넘을 수 없습니다.`);
+      return jsonError(
+        `'${product.name}'의 적용할 가격은 ${VIP_BASE_PRICE_LABEL} ${krw(product.price)}원을 넘을 수 없습니다.`
+      );
     }
     patch.custom_price = price;
     patch.discount_rate = null;

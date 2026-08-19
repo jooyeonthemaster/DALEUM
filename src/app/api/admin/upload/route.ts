@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomUUID } from "crypto";
 import { requireAdmin } from "@/lib/auth";
-
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+// 상한은 여기서 정하지 않는다 — 화면·서버가 같은 숫자를 보게 lib 의 상수 하나만 쓴다.
+// (전에는 여기 5MB, image-pipeline 8MB, 일괄 등록 화면 5MB 로 갈라져 있었다)
+import { UPLOAD_MAX_BYTES, humanBytes } from "@/lib/image-pipeline";
 
 /** 허용 이미지 MIME → 확장자 (SVG는 스크립트 삽입 위험으로 제외) */
 const MIME_EXT: Record<string, string> = {
@@ -43,9 +44,14 @@ export async function POST(req: Request) {
     );
   }
 
-  if (file.size > MAX_SIZE) {
+  if (file.size > UPLOAD_MAX_BYTES) {
+    // 관리자 화면은 올리기 전에 사진을 줄여서 보낸다(lib/admin-upload.ts).
+    // 여기까지 큰 파일이 왔다면 그 전처리를 건너뛴 경로가 있다는 뜻이라, 사람에게는
+    // "줄여서 다시" 가 아니라 "다시 시도" 를 안내하는 편이 실제 해결에 가깝다.
     return NextResponse.json(
-      { error: "이미지 용량은 5MB 이하여야 합니다." },
+      {
+        error: `사진이 너무 큽니다(${humanBytes(file.size)}). 화면을 새로 고친 뒤 다시 올려 주세요. 한 장당 ${humanBytes(UPLOAD_MAX_BYTES)}까지 받을 수 있습니다.`,
+      },
       { status: 400 }
     );
   }

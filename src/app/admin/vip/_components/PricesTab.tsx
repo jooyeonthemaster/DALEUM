@@ -3,19 +3,18 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import DataTable from "@/components/admin/DataTable";
-import Modal from "@/components/admin/Modal";
 import Pagination from "@/components/admin/Pagination";
-import { FieldRow, Input, Select, Toggle } from "@/components/admin/Field";
-import { discountRate, formatDate, krw } from "@/lib/format";
+import { Toggle } from "@/components/admin/Field";
+import { VIP_BASE_PRICE_LABEL, won } from "@/lib/admin-labels";
+import { discountRate, formatDate } from "@/lib/format";
+import NextStepCard from "./NextStepCard";
 import PriceCreateModal from "./PriceCreateModal";
+import PriceEditModal from "./PriceEditModal";
+import { isBelowCost } from "./PriceMeta";
 import {
   api,
-  BTN_GHOST,
   BTN_PRIMARY,
   customerLabel,
-  isoToDateInput,
-  kstDayEnd,
-  kstDayStart,
   previewRatePrice,
   type GroupRow,
   type PriceRow,
@@ -23,18 +22,20 @@ import {
 
 /* ============================================================
    [상품별 가격] 탭 — vip_product_prices 목록/수정/삭제 + 일괄 등록
+
+   고친 것: 기준 금액을 '정가'라 부르던 것을 '기본 판매가'로 바로잡고,
+   원가 아래로 팔리고 있는 행을 눈에 띄게 표시한다.
    ============================================================ */
 
-const PAGE_SIZE = 20;
-
-interface EditDraft {
-  row: PriceRow;
-  mode: "price" | "rate";
-  value: string;
-  startsAt: string;
-  endsAt: string;
-  active: boolean;
+export interface PricesTabProps {
+  groups: GroupRow[];
+  /** 그룹을 아직 읽는 중이면 true — 읽기 전에 '그룹이 없다'고 단정하면 안내가 깜빡인다 */
+  groupsLoading: boolean;
+  onGoToGroups: () => void;
+  onChanged: () => void | Promise<void>;
 }
+
+const PAGE_SIZE = 20;
 
 /** 목록 행의 적용가 계산 */
 function appliedPrice(row: PriceRow): number | null {
@@ -48,21 +49,18 @@ function appliedPrice(row: PriceRow): number | null {
 
 /** 적용 기간 표시 */
 function periodLabel(row: PriceRow): string {
-  if (!row.starts_at && !row.ends_at) return "상시";
-  const from = row.starts_at ? formatDate(row.starts_at) : "";
-  const to = row.ends_at ? formatDate(row.ends_at) : "";
-  return `${from} ~ ${to}`.trim();
+  if (!row.starts_at && !row.ends_at) return "계속 적용";
+  const from = row.starts_at ? formatDate(row.starts_at) : "지금";
+  const to = row.ends_at ? formatDate(row.ends_at) : "종료 없음";
+  return `${from} ~ ${to}`;
 }
 
-export default function PricesTab() {
+export default function PricesTab({ groups, groupsLoading, onGoToGroups, onChanged }: PricesTabProps) {
   const [prices, setPrices] = useState<PriceRow[] | null>(null);
-  const [groups, setGroups] = useState<GroupRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [creating, setCreating] = useState(false);
-  const [editing, setEditing] = useState<EditDraft | null>(null);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState<PriceRow | null>(null);
   const [deleting, setDeleting] = useState<PriceRow | null>(null);
 
   const load = useCallback(async () => {
@@ -78,9 +76,6 @@ export default function PricesTab() {
 
   useEffect(() => {
     const timer = setTimeout(load, 0);
-    api<{ groups: GroupRow[] }>("/api/admin/vip/groups")
-      .then((data) => setGroups(data.groups))
-      .catch(() => setGroups([]));
     return () => clearTimeout(timer);
   }, [load]);
 
@@ -97,68 +92,14 @@ export default function PricesTab() {
       setPrices((prev) =>
         prev ? prev.map((p) => (p.id === row.id ? { ...p, is_active: !next } : p)) : prev
       );
+      setError("적용 여부를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
   }
 
-  function openEdit(row: PriceRow) {
-    setEditError(null);
-    setEditing({
-      row,
-      mode: row.custom_price != null ? "price" : "rate",
-      value:
-        row.custom_price != null
-          ? String(row.custom_price)
-          : row.discount_rate != null
-            ? String(Number(row.discount_rate))
-            : "",
-      startsAt: isoToDateInput(row.starts_at),
-      endsAt: isoToDateInput(row.ends_at),
-      active: row.is_active,
-    });
-  }
-
-  async function saveEdit() {
-    if (!editing) return;
-    const base = editing.row.products?.price ?? null;
-    const n = Number(editing.value);
-    if (editing.mode === "price") {
-      if (!Number.isInteger(n) || n < 1 || (base != null && n > base)) {
-        setEditError(
-          base != null
-            ? `지정가는 1원 이상, 정가 ${krw(base)}원 이하의 정수여야 합니다.`
-            : "지정가는 1원 이상의 정수여야 합니다."
-        );
-        return;
-      }
-    } else if (!Number.isFinite(n) || n <= 0 || n > 100) {
-      setEditError("할인율은 0보다 크고 100 이하인 숫자여야 합니다.");
-      return;
-    }
-    if (editing.startsAt && editing.endsAt && editing.startsAt > editing.endsAt) {
-      setEditError("적용 종료일은 시작일 이후여야 합니다.");
-      return;
-    }
-
-    setSaving(true);
-    setEditError(null);
-    try {
-      await api(`/api/admin/vip/prices/${editing.row.id}`, {
-        method: "PATCH",
-        body: JSON.stringify({
-          ...(editing.mode === "price" ? { custom_price: n } : { discount_rate: n }),
-          starts_at: kstDayStart(editing.startsAt),
-          ends_at: kstDayEnd(editing.endsAt),
-          is_active: editing.active,
-        }),
-      });
-      setEditing(null);
-      await load();
-    } catch (e) {
-      setEditError(e instanceof Error ? e.message : "수정에 실패했습니다.");
-    } finally {
-      setSaving(false);
-    }
-  }
+  const hasGroup = groups.length > 0;
+  // 그룹을 아직 읽는 중일 때는 아무 단정도 하지 않는다(안내가 깜빡이는 것을 막는다)
+  const showEmptyState =
+    !groupsLoading && (!hasGroup || (prices !== null && prices.length === 0));
 
   const totalPages = Math.max(1, Math.ceil((prices?.length ?? 0) / PAGE_SIZE));
   const pageRows = useMemo(
@@ -168,219 +109,161 @@ export default function PricesTab() {
 
   return (
     <div>
-      {/* 툴바 */}
       <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-        <p className="text-sm text-ink-500">
-          특정 그룹 또는 고객에게만 적용되는 상품별 전용 가격입니다. 개별 지정가가 그룹 가격보다
-          우선합니다.
+        <p className="text-sm leading-relaxed text-ink-500">
+          특정 그룹이나 고객에게만 적용되는 상품 하나하나의 가격입니다. 여기서 정한 값이 그룹 전체
+          할인율보다 우선합니다.
         </p>
-        <button type="button" onClick={() => setCreating(true)} className={`shrink-0 ${BTN_PRIMARY}`}>
+        <button
+          type="button"
+          onClick={() => setCreating(true)}
+          disabled={!hasGroup}
+          title={hasGroup ? undefined : "먼저 VIP 그룹을 만들어야 합니다"}
+          className={`shrink-0 ${BTN_PRIMARY}`}
+        >
           가격 등록
         </button>
       </div>
 
       {error && <p className="mb-4 text-sm text-signal-red">{error}</p>}
 
-      <DataTable<PriceRow>
-        columns={[
-          {
-            key: "target",
-            label: "대상",
-            width: "180px",
-            render: (row) => (
-              <div className="min-w-0">
-                <p className="label-caps text-forest-700">{row.group_id ? "그룹" : "개별"}</p>
-                <p className="truncate text-ink-900">
-                  {row.group_id ? (row.vip_groups?.name ?? "삭제된 그룹") : customerLabel(row.profiles)}
-                </p>
-              </div>
-            ),
-          },
-          {
-            key: "product",
-            label: "상품",
-            render: (row) => (
-              <span className="line-clamp-1 text-ink-900">
-                {row.products?.name ?? "삭제된 상품"}
-              </span>
-            ),
-          },
-          {
-            key: "price",
-            label: "정가 → 적용가",
-            width: "200px",
-            render: (row) => {
-              const base = row.products?.price ?? null;
-              const applied = appliedPrice(row);
-              return (
-                <span className="krw">
-                  {base != null && <span className="text-ink-400 line-through">{krw(base)}원</span>}
-                  <span className="mx-1 text-ink-300">→</span>
-                  {applied != null ? (
-                    <span className="font-semibold text-forest-700">{krw(applied)}원</span>
-                  ) : (
-                    <span className="text-ink-300">—</span>
-                  )}
-                  {base != null && applied != null && (
-                    <span className="ml-1 text-xs text-ink-400">
-                      ({discountRate(base, applied)}%)
-                    </span>
-                  )}
-                </span>
-              );
+      {showEmptyState ? (
+        <NextStepCard
+          title={hasGroup ? "아직 등록된 전용 가격이 없습니다." : "먼저 VIP 그룹을 만들어야 합니다."}
+          description={
+            hasGroup
+              ? "그룹 전체 할인율만으로 충분하다면 비워 두어도 됩니다. 특정 상품만 더 깎아 주고 싶을 때 등록하세요."
+              : "전용 가격은 그룹이나 개별 고객에게 붙습니다. 그룹을 먼저 만들면 여기서 상품별 가격을 정할 수 있습니다."
+          }
+          actionLabel={hasGroup ? "가격 등록" : "그룹 만들러 가기"}
+          onAction={hasGroup ? () => setCreating(true) : onGoToGroups}
+        />
+      ) : (
+        <DataTable<PriceRow>
+          columns={[
+            {
+              key: "target",
+              label: "대상",
+              width: "180px",
+              render: (row) => (
+                <div className="min-w-0">
+                  <p className="text-xs text-forest-700">{row.group_id ? "그룹" : "고객 한 명"}</p>
+                  <p className="truncate text-ink-900">
+                    {row.group_id
+                      ? (row.vip_groups?.name ?? "삭제된 그룹")
+                      : customerLabel(row.profiles)}
+                  </p>
+                </div>
+              ),
             },
-          },
-          {
-            key: "period",
-            label: "기간",
-            width: "180px",
-            hideOnMobile: true,
-            render: (row) => <span className="krw text-ink-600">{periodLabel(row)}</span>,
-          },
-          {
-            key: "is_active",
-            label: "활성",
-            width: "90px",
-            align: "center",
-            render: (row) => (
-              <Toggle checked={row.is_active} onChange={(next) => toggleActive(row, next)} />
-            ),
-          },
-          {
-            key: "actions",
-            label: "관리",
-            width: "120px",
-            align: "right",
-            render: (row) => (
-              <div className="flex items-center justify-end gap-3">
-                <button
-                  type="button"
-                  onClick={() => openEdit(row)}
-                  className="text-sm text-ink-600 transition-colors hover:text-forest-700"
-                >
-                  수정
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDeleting(row)}
-                  className="text-sm text-ink-600 transition-colors hover:text-signal-red"
-                >
-                  삭제
-                </button>
-              </div>
-            ),
-          },
-        ]}
-        rows={pageRows}
-        loading={prices === null}
-        emptyMessage="아직 등록된 전용 가격이 없습니다."
-        pagination={<Pagination page={page} totalPages={totalPages} onChange={setPage} />}
-      />
+            {
+              key: "product",
+              label: "상품",
+              render: (row) => (
+                <span className="line-clamp-1 text-ink-900">
+                  {row.products?.name ?? "삭제된 상품"}
+                </span>
+              ),
+            },
+            {
+              key: "price",
+              label: `${VIP_BASE_PRICE_LABEL} → 적용가`,
+              width: "230px",
+              render: (row) => {
+                const base = row.products?.price ?? null;
+                const applied = appliedPrice(row);
+                const below = isBelowCost(applied, row.products?.cost_price ?? null);
+                return (
+                  <span className="krw">
+                    {base != null && <span className="text-ink-400 line-through">{won(base)}</span>}
+                    <span className="mx-1 text-ink-300">→</span>
+                    {applied != null ? (
+                      <span className={below ? "font-semibold text-signal-red" : "font-semibold text-forest-700"}>
+                        {won(applied)}
+                      </span>
+                    ) : (
+                      <span className="text-ink-300">—</span>
+                    )}
+                    {base != null && applied != null && (
+                      <span className="ml-1 text-xs text-ink-400">
+                        ({discountRate(base, applied)}%)
+                      </span>
+                    )}
+                    {below && (
+                      <span className="ml-1 block text-xs text-signal-red">원가보다 낮습니다</span>
+                    )}
+                  </span>
+                );
+              },
+            },
+            {
+              key: "period",
+              label: "기간",
+              width: "190px",
+              hideOnMobile: true,
+              render: (row) => <span className="krw text-ink-600">{periodLabel(row)}</span>,
+            },
+            {
+              key: "is_active",
+              label: "적용",
+              width: "90px",
+              align: "center",
+              render: (row) => (
+                <Toggle checked={row.is_active} onChange={(next) => toggleActive(row, next)} />
+              ),
+            },
+            {
+              key: "actions",
+              label: "관리",
+              width: "120px",
+              align: "right",
+              render: (row) => (
+                <div className="flex items-center justify-end gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setEditing(row)}
+                    className="text-sm text-ink-600 transition-colors hover:text-forest-700"
+                  >
+                    수정
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDeleting(row)}
+                    className="text-sm text-ink-600 transition-colors hover:text-signal-red"
+                  >
+                    삭제
+                  </button>
+                </div>
+              ),
+            },
+          ]}
+          rows={pageRows}
+          loading={prices === null}
+          emptyMessage="아직 등록된 전용 가격이 없습니다."
+          pagination={<Pagination page={page} totalPages={totalPages} onChange={setPage} />}
+        />
+      )}
 
-      {/* 일괄 등록 모달 */}
       <PriceCreateModal
         open={creating}
         onClose={() => setCreating(false)}
-        onSaved={() => {
+        onSaved={async () => {
           setCreating(false);
-          load();
+          await load();
+          await onChanged();
         }}
         groups={groups}
       />
 
-      {/* 수정 모달 */}
-      <Modal
-        open={editing !== null}
+      <PriceEditModal
+        row={editing}
         onClose={() => setEditing(null)}
-        title="전용 가격 수정"
-        footer={
-          <>
-            <button type="button" onClick={() => setEditing(null)} className={BTN_GHOST}>
-              취소
-            </button>
-            <button type="button" onClick={saveEdit} disabled={saving} className={BTN_PRIMARY}>
-              {saving ? "저장 중…" : "저장"}
-            </button>
-          </>
-        }
-      >
-        {editing && (
-          <div className="divide-y divide-ink-100">
-            <FieldRow label="대상 / 상품">
-              <div className="border border-ink-200 bg-cream-100 px-3.5 py-2.5 text-sm">
-                <p className="text-ink-900">
-                  {editing.row.group_id
-                    ? `그룹 · ${editing.row.vip_groups?.name ?? "삭제된 그룹"}`
-                    : `개별 · ${customerLabel(editing.row.profiles)}`}
-                </p>
-                <p className="krw mt-0.5 text-xs text-ink-400">
-                  {editing.row.products?.name ?? "삭제된 상품"}
-                  {editing.row.products && ` — 정가 ${krw(editing.row.products.price)}원`}
-                </p>
-              </div>
-            </FieldRow>
-            <FieldRow label="가격" required>
-              <div className="flex gap-2">
-                <Select
-                  value={editing.mode}
-                  onChange={(e) =>
-                    setEditing({ ...editing, mode: e.target.value as EditDraft["mode"], value: "" })
-                  }
-                  className="w-28 shrink-0"
-                  aria-label="가격 방식"
-                >
-                  <option value="price">지정가</option>
-                  <option value="rate">할인율</option>
-                </Select>
-                <div className="relative max-w-40 flex-1">
-                  <Input
-                    type="number"
-                    value={editing.value}
-                    onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-                    placeholder={editing.mode === "price" ? "지정가" : "할인율"}
-                    aria-label={editing.mode === "price" ? "지정가" : "할인율"}
-                    className="krw pr-9"
-                  />
-                  <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-ink-400">
-                    {editing.mode === "price" ? "원" : "%"}
-                  </span>
-                </div>
-              </div>
-            </FieldRow>
-            <FieldRow label="적용 기간" help="비워두면 상시 적용됩니다.">
-              <div className="flex items-center gap-2">
-                <Input
-                  type="date"
-                  value={editing.startsAt}
-                  onChange={(e) => setEditing({ ...editing, startsAt: e.target.value })}
-                  max={editing.endsAt || undefined}
-                  aria-label="적용 시작일"
-                  className="max-w-44"
-                />
-                <span className="text-ink-400">~</span>
-                <Input
-                  type="date"
-                  value={editing.endsAt}
-                  onChange={(e) => setEditing({ ...editing, endsAt: e.target.value })}
-                  min={editing.startsAt || undefined}
-                  aria-label="적용 종료일"
-                  className="max-w-44"
-                />
-              </div>
-            </FieldRow>
-            <FieldRow label="활성 상태">
-              <Toggle
-                checked={editing.active}
-                onChange={(next) => setEditing({ ...editing, active: next })}
-                label={editing.active ? "활성" : "비활성"}
-              />
-            </FieldRow>
-            {editError && <p className="pt-3 text-sm text-signal-red">{editError}</p>}
-          </div>
-        )}
-      </Modal>
+        onSaved={async () => {
+          setEditing(null);
+          await load();
+        }}
+      />
 
-      {/* 삭제 확인 */}
       <ConfirmDialog
         open={deleting !== null}
         onClose={() => setDeleting(null)}
@@ -388,9 +271,10 @@ export default function PricesTab() {
           if (!deleting) return;
           await api(`/api/admin/vip/prices/${deleting.id}`, { method: "DELETE" });
           await load();
+          await onChanged();
         }}
         title="전용 가격 삭제"
-        description={`'${deleting?.products?.name ?? "이 상품"}'의 전용 가격 설정을 삭제합니다. 이후에는 그룹 할인율 또는 정가가 적용됩니다.`}
+        description={`'${deleting?.products?.name ?? "이 상품"}'의 전용 가격을 지웁니다. 이후에는 그룹 전체 할인율이나 기본 판매가가 적용됩니다.`}
         confirmLabel="삭제"
         danger
       />

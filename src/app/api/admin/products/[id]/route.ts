@@ -8,6 +8,7 @@ import {
   parseImages,
   parseProductFields,
   parseVariants,
+  assertSellablePrice,
 } from "../shared";
 
 /* ============================================================
@@ -102,10 +103,23 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
 
   const { data: existing } = await service
     .from("products")
-    .select("id, name")
+    .select("id, name, status, price")
     .eq("id", id)
     .maybeSingle();
   if (!existing) return notFound();
+
+  // 부분 수정이라 이번 요청에 없는 값은 저장돼 있는 값으로 판정한다
+  try {
+    assertSellablePrice(
+      fields.status ?? existing.status,
+      fields.price ?? existing.price
+    );
+  } catch (e) {
+    if (e instanceof InputError) {
+      return NextResponse.json({ error: e.message }, { status: 400 });
+    }
+    throw e;
+  }
 
   // slug/SKU 중복 (본인 제외)
   if (fields.slug) {
@@ -201,17 +215,32 @@ export async function PATCH(req: NextRequest, { params }: RouteParams) {
           warnings.push(`옵션 수정 실패: ${v.name}`);
           continue;
         }
-        const delta = v.stock - prev.stock;
-        if (delta !== 0) {
-          const { error: rpcError } = await service.rpc("adjust_stock", {
-            p_product_id: id,
-            p_variant_id: v.id,
-            p_delta: delta,
-            p_reason: "adjust",
-            p_ref_order_id: null,
-            p_memo: "상품 편집 화면에서 조정",
-          });
-          if (rpcError) warnings.push(`옵션 재고 조정 실패: ${v.name}`);
+        /**
+         * 재고는 "화면이 보던 값"이 아직 유효할 때만 손댄다.
+         *
+         * 편집 화면을 열어 둔 사이 주문이 들어오면 DB 재고는 줄어 있다. 그때 화면이 들고 있던
+         * 옛 숫자로 delta 를 계산하면 팔린 수량이 그대로 되살아나 초과판매가 된다.
+         * 폼은 옵션 탭을 건드리지 않아도 매번 옵션 전체를 보내므로, 저장 버튼만 눌러도 일어났다.
+         * expected_stock 이 현재 값과 다르면 재고는 건드리지 않고 관리자에게 알린다.
+         */
+        const expected = v.expected_stock;
+        if (expected !== null && expected !== prev.stock) {
+          warnings.push(
+            `'${v.name}' 옵션은 편집하는 동안 재고가 ${expected}개에서 ${prev.stock}개로 바뀌어 재고를 그대로 두었습니다. 재고 관리 화면에서 확인해 주세요.`
+          );
+        } else {
+          const delta = v.stock - prev.stock;
+          if (delta !== 0) {
+            const { error: rpcError } = await service.rpc("adjust_stock", {
+              p_product_id: id,
+              p_variant_id: v.id,
+              p_delta: delta,
+              p_reason: "adjust",
+              p_ref_order_id: null,
+              p_memo: "상품 편집 화면에서 조정",
+            });
+            if (rpcError) warnings.push(`옵션 재고 조정 실패: ${v.name}`);
+          }
         }
       } else {
         // 신규 옵션 추가

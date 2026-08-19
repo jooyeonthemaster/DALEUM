@@ -1,5 +1,7 @@
 "use client";
 
+import { PRODUCT_STATUS_LABELS } from "@/lib/admin-labels";
+import type { ProductStatus } from "@/lib/types";
 import type {
   VipAccessCode,
   VipCampaign,
@@ -27,13 +29,15 @@ export interface CodeRow extends VipAccessCode {
 }
 
 export interface PriceRow extends VipProductPrice {
-  products?: { id: string; name: string; price: number } | null;
+  products?: { id: string; name: string; price: number; cost_price: number | null } | null;
   vip_groups?: { id: string; name: string } | null;
   profiles?: { id: string; name: string | null; email: string | null } | null;
 }
 
 export interface CampaignRow extends VipCampaign {
   item_count: number;
+  /** 담긴 상품들의 평균 할인율(%) — 목록에서 캠페인의 성격을 한눈에 보이려고 서버가 계산한다 */
+  avg_discount_rate: number | null;
   vip_groups?: { id: string; name: string } | null;
   profiles?: { id: string; name: string | null; email: string | null } | null;
 }
@@ -43,7 +47,7 @@ export interface CampaignItemDetail {
   product_id: string;
   custom_price: number;
   sort_order: number;
-  products?: { id: string; name: string; price: number; status: string } | null;
+  products?: { id: string; name: string; price: number; cost_price: number | null; status: string } | null;
 }
 
 export interface CampaignDetail extends Omit<CampaignRow, "item_count"> {
@@ -60,9 +64,26 @@ export interface CustomerHit {
 export interface ProductHit {
   id: string;
   name: string;
+  /** products.price — 화면에서는 반드시 VIP_BASE_PRICE_LABEL("기본 판매가")로 부른다 */
   price: number;
+  /** products.cost_price — 마진 판단용. 고객 화면에는 절대 나가지 않는다 */
+  cost_price: number | null;
   status: string;
+  category_id: string | null;
   image_url: string | null;
+}
+
+export interface CategoryHit {
+  id: string;
+  name: string;
+}
+
+/** 상품 담기 화면의 한 페이지 */
+export interface ProductPage {
+  products: ProductHit[];
+  total: number;
+  page: number;
+  page_size: number;
 }
 
 /* ---------- fetch 헬퍼 ---------- */
@@ -103,9 +124,38 @@ export async function copyText(text: string): Promise<boolean> {
   }
 }
 
-/** VIP 입장 페이지 전체 URL */
+/** VIP 라운지 입장 페이지 전체 주소 — 화면에 글자로 찍지 말고 복사 내용으로만 쓴다 */
 export function vipEntryUrl(): string {
   return `${window.location.origin}/vip`;
+}
+
+/**
+ * 고객에게 그대로 보낼 수 있는 초대 문구를 만든다.
+ *
+ * 왜 필요한가: 예전에는 코드 복사와 주소 복사가 따로여서, 거래처 한 곳에 코드를
+ * 보내려면 붙여넣기를 두 번 해야 했다. 게다가 화면이 "/vip" 라고만 알려 줘
+ * 문자에 그대로 "/vip" 라고 적어 보내는 사고가 났다. 이제 한 번 복사하면
+ * 인사말·주소·코드가 완성된 문장으로 클립보드에 들어간다.
+ */
+export function inviteMessage(opts: {
+  code: string;
+  groupName?: string | null;
+  expiresAt?: string | null;
+}): string {
+  const lines = [
+    "다름 VIP 라운지에 초대합니다.",
+    "아래 주소로 들어가 입장 코드를 입력해 주세요.",
+    "",
+    `주소: ${vipEntryUrl()}`,
+    `입장 코드: ${opts.code}`,
+  ];
+  if (opts.expiresAt) {
+    const d = new Date(opts.expiresAt);
+    if (!Number.isNaN(d.getTime())) {
+      lines.push("", `${d.getFullYear()}년 ${d.getMonth() + 1}월 ${d.getDate()}일까지 사용하실 수 있습니다.`);
+    }
+  }
+  return lines.join("\n");
 }
 
 /** 시크릿 캠페인 페이지 전체 URL */
@@ -145,13 +195,13 @@ export function customerLabel(
   return c.name || c.email || "이름 없음";
 }
 
-/** 상품 상태 라벨 (검색 결과 표시용) */
-export const PRODUCT_STATUS_LABELS: Record<string, string> = {
-  draft: "임시저장",
-  active: "판매중",
-  sold_out: "품절",
-  hidden: "숨김",
-};
+/**
+ * 상품 상태 라벨은 관리자 전체가 한 벌을 쓴다(lib/admin-labels.ts).
+ * 여기서 다시 짓지 않는다 — 화면마다 제 나름의 라벨을 들면 같은 값이 다른 이름으로 불린다.
+ */
+export function productStatusLabel(status: string): string {
+  return PRODUCT_STATUS_LABELS[status as ProductStatus] ?? "확인 필요";
+}
 
 /* ---------- 버튼 클래스 (관리자 킷 가이드) ---------- */
 

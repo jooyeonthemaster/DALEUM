@@ -44,12 +44,12 @@ export async function POST(req: Request) {
   if (!isUuid(body.group_id)) return jsonError("코드를 연결할 그룹을 선택해 주세요.");
 
   const label = optText(body.label, 100);
-  if (label === undefined) return jsonError("라벨은 100자 이내로 입력해 주세요.");
+  if (label === undefined) return jsonError("메모는 100자 이내로 넣어 주세요.");
 
   let maxUses: number | null = null;
   if (body.max_uses !== undefined && body.max_uses !== null && body.max_uses !== "") {
     const parsed = posInt(body.max_uses, 1_000_000);
-    if (parsed === undefined) return jsonError("최대 사용 횟수는 1 이상의 정수여야 합니다.");
+    if (parsed === undefined) return jsonError("사용 가능 횟수는 1 이상의 정수로 넣어 주세요.");
     maxUses = parsed;
   }
 

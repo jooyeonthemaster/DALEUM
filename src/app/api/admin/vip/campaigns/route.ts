@@ -3,6 +3,7 @@ import { requireAdmin } from "@/lib/auth";
 import {
   CAMPAIGN_DETAIL_SELECT,
   CAMPAIGN_LIST_SELECT,
+  summarizeItems,
   validateCampaignItems,
 } from "../_lib/campaign";
 import {
@@ -20,10 +21,6 @@ import {
    /api/admin/vip/campaigns — 시크릿 캠페인 목록/생성
    ============================================================ */
 
-interface CountAgg {
-  count: number;
-}
-
 /** GET — 캠페인 목록 (상품 수 집계 포함) */
 export async function GET() {
   const auth = await requireAdmin();
@@ -39,9 +36,9 @@ export async function GET() {
 
   const campaigns = (data ?? []).map((row) => {
     const { vip_campaign_items, ...campaign } = row as Record<string, unknown> & {
-      vip_campaign_items: CountAgg[];
+      vip_campaign_items: { custom_price: number; products: { price: number } | null }[];
     };
-    return { ...campaign, item_count: vip_campaign_items?.[0]?.count ?? 0 };
+    return { ...campaign, ...summarizeItems(vip_campaign_items) };
   });
 
   return NextResponse.json({ campaigns });
@@ -98,15 +95,15 @@ export async function POST(req: Request) {
   let requireCode: string | null = null;
   if (typeof body.require_code === "string" && body.require_code.trim() !== "") {
     const normalized = normalizeCode(body.require_code);
-    if (!normalized) return jsonError("잠금 코드는 영문 대문자·숫자 4~20자로 입력해 주세요.");
+    if (!normalized) return jsonError("암호는 영문 대문자와 숫자만으로 4~20자를 넣어 주세요.");
     requireCode = normalized;
   }
 
-  // ---------- 히어로 이미지 / 만료일 ----------
+  // ---------- 배경 사진 / 만료일 ----------
   const heroImageUrl = optText(body.hero_image_url, 600);
-  if (heroImageUrl === undefined) return jsonError("히어로 이미지 주소가 올바르지 않습니다.");
+  if (heroImageUrl === undefined) return jsonError("배경 사진을 저장하지 못했습니다. 사진을 다시 올려 주세요.");
   if (heroImageUrl && !/^https?:\/\//.test(heroImageUrl)) {
-    return jsonError("히어로 이미지 주소가 올바르지 않습니다.");
+    return jsonError("배경 사진을 저장하지 못했습니다. 사진을 다시 올려 주세요.");
   }
 
   const expiresAt = isoDate(body.expires_at);

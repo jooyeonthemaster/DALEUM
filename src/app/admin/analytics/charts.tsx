@@ -64,6 +64,26 @@ export function shortDate(date: string): string {
 
 const TICK = { fontSize: 11, fill: CHART.tick } as const;
 
+/* ---------- 데이터가 0일 때 ----------
+   매출이 전부 0원이면 recharts 가 세로축을 0,1,2,3,4 로 자동 스케일한다.
+   눈금 포맷터는 원 단위라 그 숫자가 화면에는 '4원' 처럼 읽혔다 — 매출 축과 주문수 축이
+   똑같이 0~4 로 잡혀 어느 쪽이 무슨 단위인지도 구분되지 않았다.
+   숫자가 하나도 없을 땐 차트를 아예 그리지 않고 '없다'고 말하는 편이 정직하다. */
+
+function ChartEmpty({ message, hint }: { message: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center gap-1.5 border border-dashed border-ink-200 bg-cream-100 px-4 py-16 text-center">
+      <p className="text-sm text-ink-500">{message}</p>
+      {hint && <p className="max-w-md text-xs leading-relaxed text-ink-400">{hint}</p>}
+    </div>
+  );
+}
+
+/** 기간 안에 매출·주문이 단 한 건도 없는가 */
+function isAllZero(data: DailyPoint[]): boolean {
+  return data.every((d) => (d.sales ?? 0) === 0 && (d.orders ?? 0) === 0);
+}
+
 /* ---------- 공용 툴팁 ---------- */
 
 function ChartTooltip({ active, payload, label }: TooltipContentProps) {
@@ -120,8 +140,19 @@ export interface DailyPoint {
   orders: number;
 }
 
-export function SalesAreaChart({ data }: { data: DailyPoint[] }) {
+export function SalesAreaChart({
+  data,
+  emptyMessage = "이 기간에는 매출이 없습니다.",
+  emptyHint,
+}: {
+  data: DailyPoint[];
+  emptyMessage?: string;
+  emptyHint?: string;
+}) {
   const rows = data.map((d) => ({ ...d, label: shortDate(d.date) }));
+  if (rows.length === 0 || isAllZero(data)) {
+    return <ChartEmpty message={emptyMessage} hint={emptyHint} />;
+  }
   return (
     <ResponsiveContainer width="100%" height={220}>
       <AreaChart data={rows} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
@@ -162,14 +193,26 @@ export function SalesAreaChart({ data }: { data: DailyPoint[] }) {
    2. 일별 매출 + 주문수 콤보 차트 (분석)
    ============================================================ */
 
-export function DailyComboChart({ data }: { data: DailyPoint[] }) {
+export function DailyComboChart({
+  data,
+  emptyMessage = "이 기간에는 매출이 없습니다.",
+  emptyHint,
+}: {
+  data: DailyPoint[];
+  emptyMessage?: string;
+  emptyHint?: string;
+}) {
   const rows = data.map((d) => ({ ...d, label: shortDate(d.date) }));
+  if (rows.length === 0 || isAllZero(data)) {
+    return <ChartEmpty message={emptyMessage} hint={emptyHint} />;
+  }
   return (
     <div>
+      {/* 좌축은 금액, 우축은 건수다 — 단위를 적어 두지 않으면 두 축이 같은 눈금처럼 읽힌다 */}
       <LegendRow
         items={[
-          { label: "매출", color: CHART.forest600 },
-          { label: "주문수", color: CHART.forest950, line: true },
+          { label: "매출(왼쪽 축·원)", color: CHART.forest600 },
+          { label: "주문 수(오른쪽 축·건)", color: CHART.forest950, line: true },
         ]}
       />
       <ResponsiveContainer width="100%" height={300}>
@@ -328,7 +371,7 @@ export function CategoryDonut({ data }: { data: CategoryRow[] }) {
           <Tooltip content={ChartTooltip} />
         </PieChart>
         <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-          <span className="label-caps text-ink-400">Total</span>
+          <span className="text-[11px] tracking-[0.1em] text-ink-400">합계</span>
           <span className="mt-1 text-sm font-semibold text-ink-900 krw">{compactWon(total)}원</span>
         </div>
       </div>

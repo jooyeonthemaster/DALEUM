@@ -1,14 +1,25 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
 import ConfirmDialog from "@/components/admin/ConfirmDialog";
 import Modal from "@/components/admin/Modal";
 import { FieldRow, Input, Textarea, Toggle } from "@/components/admin/Field";
+import { TOGGLE_LABELS } from "@/lib/admin-labels";
 import { api, BTN_GHOST, BTN_PRIMARY, type GroupRow } from "./vipApi";
 
 /* ============================================================
    [그룹] 탭 — vip_groups CRUD
+
+   목록은 VipTabs 가 한 번 읽어 내려 준다(탭마다 따로 읽으면 '그룹이 없다'는
+   사실을 화면마다 따로 알게 되고, 상단 진행 안내와도 어긋난다).
    ============================================================ */
+
+export interface GroupsTabProps {
+  /** null 이면 아직 불러오는 중 */
+  groups: GroupRow[] | null;
+  /** 그룹이 바뀌면 상위 목록을 다시 읽는다 */
+  onChanged: () => void | Promise<void>;
+}
 
 interface GroupDraft {
   id: string | null; // null이면 새 그룹
@@ -26,29 +37,12 @@ const EMPTY_DRAFT: GroupDraft = {
   isActive: true,
 };
 
-export default function GroupsTab() {
-  const [groups, setGroups] = useState<GroupRow[] | null>(null);
+export default function GroupsTab({ groups, onChanged }: GroupsTabProps) {
   const [error, setError] = useState<string | null>(null);
   const [draft, setDraft] = useState<GroupDraft | null>(null);
   const [draftError, setDraftError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState<GroupRow | null>(null);
-
-  const load = useCallback(async () => {
-    try {
-      const data = await api<{ groups: GroupRow[] }>("/api/admin/vip/groups");
-      setGroups(data.groups);
-      setError(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "그룹 목록을 불러오지 못했습니다.");
-      setGroups([]);
-    }
-  }, []);
-
-  useEffect(() => {
-    const timer = setTimeout(load, 0);
-    return () => clearTimeout(timer);
-  }, [load]);
 
   function openCreate() {
     setDraftError(null);
@@ -93,7 +87,7 @@ export default function GroupsTab() {
         await api("/api/admin/vip/groups", { method: "POST", body: payload });
       }
       setDraft(null);
-      await load();
+      await onChanged();
     } catch (e) {
       setDraftError(e instanceof Error ? e.message : "저장에 실패했습니다.");
     } finally {
@@ -102,20 +96,17 @@ export default function GroupsTab() {
   }
 
   async function toggleActive(group: GroupRow, next: boolean) {
-    setGroups((prev) =>
-      prev ? prev.map((g) => (g.id === group.id ? { ...g, is_active: next } : g)) : prev
-    );
+    setError(null);
     try {
       await api(`/api/admin/vip/groups/${group.id}`, {
         method: "PATCH",
         body: JSON.stringify({ is_active: next }),
       });
     } catch {
-      // 실패 시 되돌림
-      setGroups((prev) =>
-        prev ? prev.map((g) => (g.id === group.id ? { ...g, is_active: !next } : g)) : prev
-      );
+      setError("노출 상태를 바꾸지 못했습니다. 잠시 후 다시 시도해 주세요.");
     }
+    // 성공이든 실패든 서버 값을 다시 읽어 화면과 실제를 맞춘다
+    await onChanged();
   }
 
   const loading = groups === null;
@@ -124,8 +115,9 @@ export default function GroupsTab() {
     <div>
       {/* 툴바 */}
       <div className="mb-6 flex items-center justify-between gap-3">
-        <p className="text-sm text-ink-500">
-          그룹 단위로 전체 할인율을 정하고, 멤버·입장 코드·전용 가격을 연결합니다.
+        <p className="text-sm leading-relaxed text-ink-500">
+          그룹은 VIP 혜택의 단위입니다. 먼저 그룹을 만들어야 멤버를 배정하거나 입장 코드를 만들 수
+          있습니다.
         </p>
         <button type="button" onClick={openCreate} className={`shrink-0 ${BTN_PRIMARY}`}>
           새 그룹
@@ -165,7 +157,7 @@ export default function GroupsTab() {
                 <Toggle
                   checked={group.is_active}
                   onChange={(next) => toggleActive(group, next)}
-                  label={group.is_active ? "활성" : "비활성"}
+                  label={group.is_active ? TOGGLE_LABELS.on : TOGGLE_LABELS.off}
                 />
               </div>
 
@@ -176,8 +168,8 @@ export default function GroupsTab() {
               )}
 
               <div className="mt-auto flex items-center justify-between pt-5">
-                <p className="label-caps text-ink-400">
-                  멤버 {group.member_count} · 코드 {group.code_count}
+                <p className="text-xs text-ink-400">
+                  멤버 {group.member_count}명 · 입장 코드 {group.code_count}개
                 </p>
                 <div className="flex items-center gap-3">
                   <button
@@ -254,11 +246,11 @@ export default function GroupsTab() {
                 className="max-w-36"
               />
             </FieldRow>
-            <FieldRow label="활성 상태" help="끄면 이 그룹의 모든 VIP 혜택이 중지됩니다.">
+            <FieldRow label="혜택 적용" help="끄면 이 그룹의 모든 VIP 혜택이 중지됩니다.">
               <Toggle
                 checked={draft.isActive}
                 onChange={(next) => setDraft({ ...draft, isActive: next })}
-                label={draft.isActive ? "활성" : "비활성"}
+                label={draft.isActive ? TOGGLE_LABELS.on : TOGGLE_LABELS.off}
               />
             </FieldRow>
             {draftError && <p className="pt-3 text-sm text-signal-red">{draftError}</p>}
@@ -273,7 +265,7 @@ export default function GroupsTab() {
         onConfirm={async () => {
           if (!deleting) return;
           await api(`/api/admin/vip/groups/${deleting.id}`, { method: "DELETE" });
-          await load();
+          await onChanged();
         }}
         title="그룹 삭제"
         description={

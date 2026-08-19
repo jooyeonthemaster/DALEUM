@@ -23,7 +23,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   if ("label" in body) {
     const label = optText(body.label, 100);
-    if (label === undefined) return jsonError("라벨은 100자 이내로 입력해 주세요.");
+    if (label === undefined) return jsonError("메모는 100자 이내로 넣어 주세요.");
     patch.label = label;
   }
   if ("max_uses" in body) {
@@ -31,7 +31,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
       patch.max_uses = null;
     } else {
       const parsed = posInt(body.max_uses, 1_000_000);
-      if (parsed === undefined) return jsonError("최대 사용 횟수는 1 이상의 정수여야 합니다.");
+      if (parsed === undefined) return jsonError("사용 가능 횟수는 1 이상의 정수로 넣어 주세요.");
       patch.max_uses = parsed;
     }
   }

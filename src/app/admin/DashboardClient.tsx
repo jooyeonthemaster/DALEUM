@@ -3,13 +3,15 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowRight } from "lucide-react";
 import StatCard from "@/components/admin/StatCard";
 import StatusChip from "@/components/admin/StatusChip";
 import DataTable, { type DataTableColumn } from "@/components/admin/DataTable";
 import { krw, formatDateTime } from "@/lib/format";
+import { ORDER_STATUS_LABELS } from "@/lib/admin-labels";
 import type { OrderStatus } from "@/lib/types";
 import { SalesAreaChart, type DailyPoint } from "./analytics/charts";
+import TodoBoard, { type TodoItem } from "./_dashboard/TodoBoard";
+import StatusBreakdownList from "./_dashboard/StatusBreakdownList";
 
 /* ---------- 타입 ---------- */
 
@@ -36,6 +38,18 @@ interface RecentOrderRow {
   created_at: string;
 }
 
+/** 대시보드 상단 '오늘 처리할 일' 집계 (API 가 함께 내려준다) */
+interface TodoCounts {
+  /** API 가 계속 내려주지만 화면에는 '오늘 처리할 일' 로 띄우지 않는다
+      — 이 상태로 넘어오는 경로가 없어 늘 0이다(아래 todoItems 주석) */
+  refundRequested: number;
+  paid: number;
+  reviewsPending: number;
+  inquiriesNew: number;
+  emptyDetail: number;
+  lowStock: number;
+}
+
 interface DashboardData {
   today: Kpi;
   week: Kpi;
@@ -43,20 +57,8 @@ interface DashboardData {
   lowStock: LowStockRow[];
   recentOrders: RecentOrderRow[];
   dailySales: DailyPoint[];
+  todo?: TodoCounts;
 }
-
-/** 대시보드에 표시할 상태 순서 */
-const STATUS_ORDER: OrderStatus[] = [
-  "pending",
-  "paid",
-  "preparing",
-  "shipped",
-  "delivered",
-  "confirmed",
-  "refund_requested",
-  "cancelled",
-  "refunded",
-];
 
 /* ---------- 카드 셸 ---------- */
 
@@ -74,7 +76,10 @@ function Card({
   return (
     <section className={`border border-ink-200 bg-cream-50 p-5 ${className}`}>
       <div className="mb-4 flex items-baseline justify-between gap-4">
-        <h2 className="label-caps text-ink-400">{title}</h2>
+        {/* label-caps 는 자간을 0.22em 벌린다 — 영문 오버라인용이라 한글에서는
+            '최 근  7 일  매 출' 처럼 글자가 흩어져 읽는 속도가 눈에 띄게 느려진다.
+            uppercase 도 한글에는 아무 효과가 없다. 관리자 화면은 한국어뿐이므로 쓰지 않는다. */}
+        <h2 className="text-[13px] font-semibold text-ink-500">{title}</h2>
         {action && (
           <Link
             href={action.href}
@@ -184,51 +189,115 @@ export default function DashboardClient() {
     );
   }
 
-  const { today, week, statusCounts, lowStock, recentOrders, dailySales } = data;
+  const { today, week, statusCounts, lowStock, recentOrders, dailySales, todo } = data;
   const weekSalesTotal = dailySales.reduce((acc, d) => acc + d.sales, 0);
+
+  /* '오늘 처리할 일' — 급한 순서로 고정한다.
+     구형 응답(todo 없음)으로도 화면이 깨지지 않게 statusCounts 로 값을 메운다.
+
+     ⚠ '환불 요청' 칸을 여기서 뺐다.
+     주문이 refund_requested 상태로 넘어오는 경로가 이 저장소 어디에도 없다 — 고객 화면에는
+     환불 요청 버튼이 없고, 관리자가 손으로 바꿀 수 있는 상태 목록(ADMIN_SETTABLE_STATUSES)
+     에도 그 상태는 빠져 있다. 읽고 라벨을 붙이는 코드만 있다. 그러니 이 숫자는 구조적으로
+     항상 0이고, '오늘 처리할 일' 맨 앞에서 늘 '없음' 으로 앉아 있으면
+     "환불 요청이 들어오면 여기 뜬다" 는 있지도 않은 안전망을 믿게 만든다.
+     그래서 지표 자체는 지우지 않고 '상태별 주문 현황' 에 남겨 두되, 왜 늘 0인지와
+     환불을 실제로 어떻게 처리하는지를 그 자리에서 말해 준다(아래 카드).
+
+     주소(href)는 **받는 화면이 실제로 읽는 조건**만 싣는다.
+     주문 관리만 주소로 조건을 받는다(orders/page.tsx 가 `tab` 을 읽는다).
+     리뷰·문의·재고·상품 화면은 아직 주소로 조건을 받지 않는다 — 읽지도 않는 조건을 주소에
+     달아 두면 눌러도 전체 목록이 나오면서 '필터가 걸렸다'고 착각하게 되므로, 조건 없이
+     화면만 열고 어느 탭을 눌러야 하는지 설명(hint)으로 알려 준다. */
+  const todoItems: TodoItem[] = [
+    {
+      // 상태 이름은 화면 안에서 짓지 않는다 — 주문 관리 화면과 같은 말이어야 찾아갈 수 있다
+      label: ORDER_STATUS_LABELS.paid,
+      count: todo?.paid ?? statusCounts.paid ?? 0,
+      hint: "결제가 끝나 발송을 기다리는 주문 · 주문 관리의 결제완료 탭이 열립니다",
+      href: "/admin/orders?tab=paid",
+      tone: "action",
+    },
+    {
+      label: "답글 대기 리뷰",
+      count: todo?.reviewsPending ?? 0,
+      hint: "고객이 남긴 리뷰 중 아직 답글을 달지 않은 것 · 리뷰 관리의 답글 대기 탭에서 볼 수 있습니다",
+      href: "/admin/reviews",
+      tone: "action",
+    },
+    {
+      label: "새 견적 문의",
+      count: todo?.inquiriesNew ?? 0,
+      hint: "업소용·OEM 문의 중 아직 연락하지 않은 건 · 문의 화면의 신규 접수 탭에서 볼 수 있습니다",
+      href: "/admin/bulk-inquiries",
+      tone: "action",
+    },
+    {
+      label: "재고 부족",
+      count: todo?.lowStock ?? lowStock.length,
+      hint: "재고 부족 기준 아래로 내려간 판매 상품",
+      href: "/admin/inventory",
+      tone: "warn",
+    },
+    {
+      label: "상세페이지 빈 상품",
+      count: todo?.emptyDetail ?? 0,
+      hint: "판매 중인데 상세 설명이 하나도 없는 상품 · 상품을 열어 상세페이지 탭에서 채웁니다",
+      href: "/admin/products",
+      tone: "quiet",
+    },
+  ];
 
   return (
     <div className="space-y-6">
-      {/* ---------- KPI ---------- */}
+      {/* ---------- 오늘 처리할 일 ---------- */}
+      <TodoBoard items={todoItems} />
+
+      {/* ---------- KPI ----------
+          숫자 밑에 '무엇을 센 숫자인지' 한 줄을 함께 둔다.
+          '오늘 매출' 이 결제 완료분만인지 주문 접수분까지인지를 두고 실제로 혼선이 있었다. */}
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard
           label="오늘 매출"
           value={`${krw(today.sales)}원`}
-          sub={`이번 주 ${krw(week.sales)}원`}
+          sub={
+            <>
+              <span className="block">이번 주 {krw(week.sales)}원</span>
+              <span className="mt-1 block text-ink-300">결제가 끝난 주문의 결제 금액 합계</span>
+            </>
+          }
         />
         <StatCard
           label="오늘 주문"
           value={`${today.orders}건`}
-          sub={`이번 주 ${week.orders}건`}
+          sub={
+            <>
+              <span className="block">이번 주 {week.orders}건</span>
+              <span className="mt-1 block text-ink-300">결제가 끝난 주문 건수</span>
+            </>
+          }
         />
         <StatCard
-          label="평균 주문액"
+          label="주문 한 건당 평균"
           value={`${krw(today.avgOrder)}원`}
-          sub={`이번 주 평균 ${krw(week.avgOrder)}원`}
+          sub={
+            <>
+              <span className="block">이번 주 평균 {krw(week.avgOrder)}원</span>
+              <span className="mt-1 block text-ink-300">매출을 주문 건수로 나눈 값</span>
+            </>
+          }
         />
         <StatCard
           label="신규 회원"
           value={`${today.newMembers}명`}
-          sub={`이번 주 ${week.newMembers}명`}
+          sub={
+            <>
+              <span className="block">이번 주 {week.newMembers}명</span>
+              <span className="mt-1 block text-ink-300">오늘 새로 가입한 회원 수</span>
+            </>
+          }
         />
       </div>
-
-      {/* ---------- 처리 대기 알림 ---------- */}
-      {statusCounts.paid > 0 && (
-        <Link
-          href="/admin/orders"
-          className="flex items-center justify-between gap-4 border border-forest-600 bg-forest-50 px-5 py-4 transition-colors hover:bg-forest-100"
-        >
-          <p className="text-sm text-forest-800">
-            <span className="font-semibold">결제 완료 {statusCounts.paid}건</span> — 상품 준비가
-            필요합니다.
-          </p>
-          <span className="inline-flex shrink-0 items-center gap-1 text-sm text-forest-700">
-            주문 관리
-            <ArrowRight size={16} strokeWidth={1.5} />
-          </span>
-        </Link>
-      )}
 
       {/* ---------- 매출 차트 + 상태 현황 ---------- */}
       <div className="grid gap-6 lg:grid-cols-3">
@@ -237,29 +306,16 @@ export default function DashboardClient() {
             {krw(weekSalesTotal)}원
             <span className="ml-2 text-xs font-normal text-ink-400">7일 합계</span>
           </p>
-          <SalesAreaChart data={dailySales} />
+          {/* 전액 0원이면 축이 0~4 로 잡혀 '4원' 처럼 읽힌다 — 차트 대신 안내를 그린다 */}
+          <SalesAreaChart
+            data={dailySales}
+            emptyMessage="최근 7일간 결제된 주문이 없습니다."
+            emptyHint="상품이 '판매중' 상태인지, 스토어에서 실제로 구매가 되는지 확인해 보세요."
+          />
         </Card>
 
         <Card title="상태별 주문 현황" action={{ href: "/admin/orders", label: "주문 관리" }}>
-          <ul className="divide-y divide-ink-100">
-            {STATUS_ORDER.map((s) => (
-              <li key={s} className="flex items-center justify-between py-2">
-                <StatusChip status={s} />
-                <span
-                  className={`text-sm krw ${
-                    s === "paid" && statusCounts[s] > 0
-                      ? "font-semibold text-forest-700"
-                      : "text-ink-700"
-                  }`}
-                >
-                  {krw(statusCounts[s] ?? 0)}건
-                  {s === "paid" && statusCounts[s] > 0 && (
-                    <span className="ml-1.5 text-xs font-normal text-forest-600">준비 필요</span>
-                  )}
-                </span>
-              </li>
-            ))}
-          </ul>
+          <StatusBreakdownList statusCounts={statusCounts} />
         </Card>
       </div>
 
@@ -273,15 +329,18 @@ export default function DashboardClient() {
           <DataTable<RecentOrderRow>
             columns={columns}
             rows={recentOrders}
-            emptyMessage="아직 들어온 주문이 없습니다."
+            emptyMessage="아직 들어온 주문이 없습니다. 주문이 들어오면 여기에 최근 10건이 표시됩니다."
             onRowClick={(o) => router.push(`/admin/orders/${o.id}`)}
           />
         </Card>
 
         <Card title="재고 임박 상품" action={{ href: "/admin/inventory", label: "재고 관리" }}>
           {lowStock.length === 0 ? (
-            <p className="py-10 text-center text-sm text-ink-400">
-              임계치 이하로 내려간 상품이 없습니다.
+            <p className="py-10 text-center text-sm leading-relaxed text-ink-400">
+              재고 부족 기준 아래로 내려간 상품이 없습니다.
+              <span className="mt-1 block text-xs text-ink-300">
+                기준 수량은 상품별로 재고 관리 화면에서 바꿀 수 있습니다.
+              </span>
             </p>
           ) : (
             <ul className="divide-y divide-ink-100">
