@@ -30,7 +30,7 @@ import { appendOrderEvent } from "../../order-memo";
 interface OrderRow extends FinalizableOrder {
   status: string;
   admin_memo: string | null;
-  payments: { id: string; payment_key: string | null; status: string; amount: number }[];
+  payments: { id: string; payment_key: string | null; status: string; amount: number; refunded_amount?: number | null }[];
 }
 
 /**
@@ -109,7 +109,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   const { data } = await service
     .from("orders")
     .select(
-      "id, order_no, status, total, user_id, vip_code, coupon_id, admin_memo, order_items(product_id, variant_id, qty), payments(id, payment_key, status, amount)"
+      "id, order_no, status, total, user_id, vip_code, coupon_id, admin_memo, order_items(product_id, variant_id, qty), payments(id, payment_key, status, amount, refunded_amount)"
     )
     .eq("id", id)
     .maybeSingle();
@@ -161,7 +161,7 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
     (p) => (p.status === "paid" || p.status === "partial_refunded") && p.payment_key
   );
   const base = payment?.amount ?? order.total;
-  const ledger = refundLedger(base, events, !payment);
+  const ledger = refundLedger(base, events, !payment, payment?.refunded_amount ?? null);
 
   if (ledger.remaining <= 0) {
     return NextResponse.json(
@@ -297,9 +297,16 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
 
   // ---------- 부분 환불: payments 상태만 갱신 + 이력에 잔액까지 남긴다 ----------
   if (isPartial && !forcedFull) {
-    await service.from("payments").update({ status: "partial_refunded" }).eq("id", payment.id);
     // 결제사가 알려 준 잔액을 그대로 적는다. 못 받았으면 뺄셈으로 채운다.
     const remaining = (cancelled ? balanceOf(cancelled) : null) ?? ledger.remaining - amount!;
+    /* 누계는 이제 문장이 아니라 이 숫자가 장부다(0006).
+       메모가 덮어써도 사라지지 않으므로 초과 환불이 되살아나지 않는다.
+       amount 를 더하지 않고 base-remaining 으로 다시 세우는 이유: 결제사가 알려 준 잔액이
+       우리 계산보다 작을 수 있고(다른 경로의 취소), 그때는 결제사 쪽이 진실이다. */
+    await service
+      .from("payments")
+      .update({ status: "partial_refunded", refunded_amount: Math.max(0, base - remaining) })
+      .eq("id", payment.id);
     const eventBody = partialRefundBody(amount!, reason, remaining);
     const logged = await appendOrderEvent(service, order.id, {
       kind: EVENT_KINDS.refundPartial,
@@ -322,7 +329,11 @@ export async function POST(req: NextRequest, { params }: { params: Promise<{ id:
   }
 
   // ---------- 잔액 전액 환불: payments → orders → 재고 복구 ----------
-  await service.from("payments").update({ status: "refunded" }).eq("id", payment.id);
+  // 잔액을 전부 환불했으므로 누계는 결제 금액과 같아진다
+  await service
+    .from("payments")
+    .update({ status: "refunded", refunded_amount: base })
+    .eq("id", payment.id);
 
   const { data: claimed } = await service
     .from("orders")

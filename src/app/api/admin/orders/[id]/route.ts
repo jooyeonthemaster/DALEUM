@@ -20,14 +20,23 @@ interface PaymentRow {
   payment_key: string | null;
   status: string;
   amount: number;
+  /** 환불 누계 (0006 마이그레이션). 옛 행은 0 이다 */
+  refunded_amount?: number | null;
 }
 
-/** 환불 기준 금액 — 결제사 기록이 있으면 그 금액, 수기 결제 주문이면 주문 총액 */
+/**
+ * 환불 기준 금액 — 결제사 기록이 있으면 그 금액, 수기 결제 주문이면 주문 총액.
+ * 환불 누계(refunded_amount)도 함께 들고 나간다 — 이제 장부는 문장이 아니라 이 숫자다(0006).
+ */
 function refundBase(payments: PaymentRow[] | null | undefined, total: number) {
   const payment = payments?.find(
     (p) => (p.status === "paid" || p.status === "partial_refunded") && p.payment_key
   );
-  return { paid: payment?.amount ?? total, manual: !payment };
+  return {
+    paid: payment?.amount ?? total,
+    manual: !payment,
+    refundedAmount: payment?.refunded_amount ?? null,
+  };
 }
 
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
@@ -74,7 +83,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     customer,
     memo,
     events,
-    refund: refundLedger(base.paid, events, base.manual),
+    refund: refundLedger(base.paid, events, base.manual, base.refundedAmount),
     memoKinds: MEMO_KINDS,
   });
 }
@@ -113,7 +122,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
   const { data: current } = await service
     .from("orders")
-    .select("id, status, paid_at, admin_memo, recipient, total, payments(payment_key, status, amount)")
+    .select("id, status, paid_at, admin_memo, recipient, total, payments(payment_key, status, amount, refunded_amount)")
     .eq("id", id)
     .maybeSingle();
   if (!current) {
@@ -208,7 +217,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
       order: { id, status: currentStatus, admin_memo: parsed.memo },
       memo: parsed.memo,
       events: parsed.events,
-      refund: refundLedger(base.paid, parsed.events, base.manual),
+      refund: refundLedger(base.paid, parsed.events, base.manual, base.refundedAmount),
     });
   }
 
@@ -247,6 +256,6 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     order: { ...(updated ?? { id, status: currentStatus }), admin_memo: log.memo },
     memo: log.memo,
     events: log.events,
-    refund: refundLedger(base.paid, log.events, base.manual),
+    refund: refundLedger(base.paid, log.events, base.manual, base.refundedAmount),
   });
 }

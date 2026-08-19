@@ -32,14 +32,26 @@ function parseWon(text: string): number {
 }
 
 /**
- * 이력에서 환불 누계를 되읽는다.
+ * 환불 누계를 구한다.
  *
- * 누계를 담을 컬럼이 없어서(payments 는 부분 환불 뒤에도 원금을 그대로 들고 있다)
- * 이력에 적힌 금액을 더한다. 부분 환불 이력에는 결제사가 알려 준 잔액도 함께 적어 두므로,
- * 마지막에 적힌 잔액과 뺄셈 결과 중 **작은 쪽** 을 쓴다 — 초과 환불은 돈이 나가고 나면
- * 되돌릴 수 없으니 항상 보수적으로 잡는다.
+ * 우선순위는 **장부 컬럼(payments.refunded_amount) → 이력 문장** 이다.
+ *
+ * 0006 마이그레이션 전에는 누계를 담을 자리가 없어서, 사람이 읽는 한국어 문장을 되읽어
+ * 금액을 더했다. 그 방식은 같은 칸(orders.admin_memo)을 관리자 메모가 덮어쓰면
+ * 장부가 통째로 사라지고 → 남은 금액이 원금으로 되살아나 **초과 환불이 열리는** 구조였다.
+ * 이제 숫자는 컬럼에 있고, 문장은 사람이 읽는 용도로만 남는다.
+ *
+ * 옛 주문(컬럼이 0인데 이력에는 환불 기록이 있는 경우)을 위해 문장 파싱도 남겨 둔다 —
+ * 둘 중 **누계가 큰 쪽**(=남은 금액이 작은 쪽)을 쓴다. 초과 환불은 돈이 나가고 나면
+ * 되돌릴 수 없으니 언제나 보수적으로 잡는다.
  */
-export function refundLedger(paid: number, events: OrderEvent[], manual = false): RefundLedger {
+export function refundLedger(
+  paid: number,
+  events: OrderEvent[],
+  manual = false,
+  /** payments.refunded_amount — 있으면 이쪽이 장부다 */
+  refundedAmount?: number | null
+): RefundLedger {
   let sum = 0;
   let authoritative: number | null = null;
   let pgCancelUnknown = false;
@@ -57,7 +69,10 @@ export function refundLedger(paid: number, events: OrderEvent[], manual = false)
   }
 
   const bySum = Math.max(0, paid - sum);
-  const remaining = authoritative == null ? bySum : Math.max(0, Math.min(bySum, authoritative));
+  const byText = authoritative == null ? bySum : Math.max(0, Math.min(bySum, authoritative));
+  // 컬럼 장부가 있으면 그것과 문장 계산 중 남은 금액이 작은 쪽을 택한다
+  const byColumn = refundedAmount == null ? null : Math.max(0, paid - refundedAmount);
+  const remaining = byColumn == null ? byText : Math.min(byText, byColumn);
   return { paid, refunded: Math.max(0, paid - remaining), remaining, manual, pgCancelUnknown };
 }
 
