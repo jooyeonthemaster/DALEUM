@@ -6,7 +6,7 @@
    (실제로 브랜드·공급처가 그런 식으로 빠져 있었다).
    ============================================================ */
 
-import { normalizeBlocks, parseDetailDoc } from "@/lib/detail-doc";
+import { docFromLegacyMarkdown, parseDetailDocJson } from "@/lib/detail-doc-v2";
 import type { ProductWithImages } from "@/lib/types";
 import { recordToRows } from "../form-types";
 import type { ProductFormSnapshot } from "./draft-storage";
@@ -37,7 +37,11 @@ export function snapshotFromProduct(p: ProductWithImages): ProductFormSnapshot {
       is_featured: p.is_featured,
       sort_order: String(p.sort_order),
     },
-    detailBlocks: normalizeBlocks(parseDetailDoc(p.description)),
+    /* 상세페이지 문서. 새 편집기로 저장한 적이 있으면 그 문서를 그대로 쓰고,
+       없으면 레거시 마크다운에서 읽어 온다(그때 모든 글은 lead 로 표시돼
+       고객 화면이 오늘과 똑같이 유지된다 — detail-doc-v2.ts 머리말 참고). */
+    detailDoc:
+      parseDetailDocJson(p.description_doc) ?? docFromLegacyMarkdown(p.description),
     // alt 를 버리면 저장할 때 서버가 상품명으로 덮어쓴다 — 사람이 적어 둔 사진 설명이 사라진다.
     images: (p.product_images ?? []).map((img) => ({ url: img.url, alt: img.alt })),
     variants: (p.product_variants ?? []).map((v) => ({

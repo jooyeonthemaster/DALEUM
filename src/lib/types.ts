@@ -72,6 +72,12 @@ export interface Product {
   /** 공급 라인: 자체 / 수다락 / 곤약닷컴 — 관리자 식별용, 고객 화면에는 노출하지 않는다 */
   supplier?: string | null;
   description: string | null;
+  /**
+   * 상세페이지 문서 v2 (lib/detail-doc-v2.ts 의 DetailDoc). 0007 마이그레이션.
+   * 이것이 있으면 진실이고, description 은 그것의 레거시 마크다운 미러다.
+   * 없으면(=새 편집기로 저장한 적 없는 상품) 고객 화면은 기존 렌더 경로를 그대로 탄다.
+   */
+  description_doc?: unknown | null;
   story: string | null;
   price: number;
   compare_at_price: number | null;
@@ -136,6 +142,7 @@ export interface ProductWithImages extends Product {
 export type ProductCardRow = Omit<
   ProductWithImages,
   | "description"
+  | "description_doc"
   | "story"
   | "specs"
   | "nutrition"

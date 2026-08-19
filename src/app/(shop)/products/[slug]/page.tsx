@@ -22,6 +22,10 @@ import Gallery from "@/components/catalog/Gallery";
 import DescriptionBlock, {
   hasDescriptionImages,
 } from "@/components/catalog/DescriptionBlock";
+import DetailDocRenderer, {
+  docHasFlow,
+} from "@/components/catalog/DetailDocRenderer";
+import { parseDetailDocJson } from "@/lib/detail-doc-v2";
 import Expandable from "@/components/catalog/Expandable";
 import AddToCart, {
   type PurchaseOption,
@@ -283,6 +287,11 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
     ...product.specs,
   };
 
+  /* 상세페이지 v2 문서. 있으면 이것이 진실이고, 없으면(=새 편집기로 저장한 적 없는 상품)
+     아래에서 기존 DescriptionBlock 경로를 그대로 탄다 — 손대지 않은 상품의 화면은
+     구조적으로 바뀔 수 없다. */
+  const detailDoc = parseDetailDocJson(product.description_doc);
+
   const hasNutrition = Object.keys(product.nutrition ?? {}).length > 0;
   const loginNext = `/products/${product.slug}`;
   const soldOut = product.status === "sold_out" || product.stock <= 0;
@@ -346,10 +355,16 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
               )}
               {/* 설명이 긴 상품은 구매 박스가 통째로 밀려 장바구니 버튼이 화면 밖으로
                   나간다. 앞부분만 보여주고 나머지는 "자세히 보기"로 넘긴다. */}
-              {product.description && (
+              {detailDoc ? (
                 <Expandable lines={7} className="mt-5">
-                  <DescriptionBlock text={product.description} only="text" />
+                  <DetailDocRenderer doc={detailDoc} place="lead" />
                 </Expandable>
+              ) : (
+                product.description && (
+                  <Expandable lines={7} className="mt-5">
+                    <DescriptionBlock text={product.description} only="text" />
+                  </Expandable>
+                )
               )}
             </Reveal>
 
@@ -384,7 +399,9 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
         {/* ---------- 상세 섹션 ---------- */}
         <div className="mx-auto mt-20 max-w-3xl md:mt-28">
           {/* 상품 상세 이미지 — 세로 수천 px 이라 구매 박스가 아니라 여기서 전체폭으로 편다 */}
-          {product.description && hasDescriptionImages(product.description) && (
+          {(detailDoc
+            ? docHasFlow(detailDoc)
+            : product.description && hasDescriptionImages(product.description)) && (
             <section>
               <Reveal as="div" variant="rule" className="h-px bg-ink-200" />
               <div className="py-14 md:py-16">
@@ -395,7 +412,11 @@ export default async function ProductDetailPage({ params }: { params: Params }) 
                     className="mb-8"
                   />
                 </Reveal>
-                <DescriptionBlock text={product.description} only="images" />
+                {detailDoc ? (
+                  <DetailDocRenderer doc={detailDoc} place="flow" />
+                ) : (
+                  <DescriptionBlock text={product.description!} only="images" />
+                )}
               </div>
             </section>
           )}

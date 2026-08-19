@@ -6,14 +6,14 @@
    변환은 여기 한곳에 모으고, 숫자로 못 읽히는 값은 여기 오기 전에 검사(validate.ts)가 막는다.
    ============================================================ */
 
-import { isEmptyDoc, serializeDetailDoc, type DetailBlock } from "@/lib/detail-doc";
+import { docIsEmpty, docToLegacyMarkdown, type DetailDoc } from "@/lib/detail-doc-v2";
 import { rowsToRecord, toInt, toIntOrNull, type FormState, type KvRow, type VariantDraft } from "../form-types";
 import type { ProductImageDraft } from "./draft-storage";
 
 export interface BuildPayloadInput {
   form: FormState;
   images: ProductImageDraft[];
-  detailBlocks: DetailBlock[];
+  detailDoc: DetailDoc;
   variants: VariantDraft[];
   nutritionRows: KvRow[];
   specRows: KvRow[];
@@ -23,7 +23,7 @@ export interface BuildPayloadInput {
 export function buildPayload({
   form,
   images,
-  detailBlocks,
+  detailDoc,
   variants,
   nutritionRows,
   specRows,
@@ -35,7 +35,11 @@ export function buildPayload({
       slug: form.slug.trim(),
       subtitle: form.subtitle.trim() || null,
       category_id: form.category_id || null,
-      description: isEmptyDoc(detailBlocks) ? null : serializeDetailDoc(detailBlocks),
+      /* 진실은 description_doc 이고 description 은 그 미러다.
+         미러를 여기서도 함께 보내는 이유: 서버가 문서에서 다시 만들어 덮어쓰지만,
+         문서가 비어 null 로 갈 때는 서버가 손댈 것이 없어 옛 본문이 그대로 남는다. */
+      description_doc: docIsEmpty(detailDoc) ? null : detailDoc,
+      description: docIsEmpty(detailDoc) ? null : docToLegacyMarkdown(detailDoc),
       story: form.story.trim() || null,
       // 브랜드는 고객 상세페이지 표기용, 공급처는 관리자 식별용이다. 둘 다 0003 마이그레이션으로
       // 들어온 컬럼인데 폼에서 보내지 않아, 입력칸을 만들어도 저장되지 않던 자리다.

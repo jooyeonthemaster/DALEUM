@@ -21,7 +21,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { ProductStatus, ProductWithImages } from "@/lib/types";
 import { slugify } from "@/lib/format";
-import type { DetailBlock } from "@/lib/detail-doc";
+import type { DetailDoc } from "@/lib/detail-doc-v2";
 import { BTN_GHOST } from "./product-ui";
 import { EMPTY_FORM, toIntOrNull, type FormState, type KvRow, type VariantDraft } from "./form-types";
 import FormDialogs from "./_form/FormDialogs";
@@ -62,7 +62,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
   const [images, setImages] = useState<ProductImageDraft[]>([]);
   // 상세페이지 본문은 마크다운 문자열이 아니라 칸 목록으로 들고 있는다 —
   // 저장 직전에만 원문으로 직렬화한다(고객 화면 렌더 계약은 그대로).
-  const [detailBlocks, setDetailBlocks] = useState<DetailBlock[]>([]);
+  const [detailDoc, setDetailDoc] = useState<DetailDoc>({ version: 2, blocks: [] });
   /**
    * 상품 사진 탭에서 상세페이지 쪽으로 넘긴 사진.
    *
@@ -104,14 +104,14 @@ export default function ProductForm({ productId }: { productId?: string }) {
   }, []);
 
   const snapshot: ProductFormSnapshot = useMemo(
-    () => ({ form, images, detailBlocks, variants, nutritionRows, specRows }),
-    [form, images, detailBlocks, variants, nutritionRows, specRows]
+    () => ({ form, images, detailDoc, variants, nutritionRows, specRows }),
+    [form, images, detailDoc, variants, nutritionRows, specRows]
   );
 
   const applySnapshot = useCallback((snap: ProductFormSnapshot) => {
     setForm(snap.form);
     setImages(snap.images);
-    setDetailBlocks(snap.detailBlocks);
+    setDetailDoc(snap.detailDoc);
     setVariants(snap.variants);
     setNutritionRows(snap.nutritionRows);
     setSpecRows(snap.specRows);
@@ -201,7 +201,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
     const payload = buildPayload({
       form: effectiveForm,
       images,
-      detailBlocks,
+      detailDoc,
       variants,
       nutritionRows,
       specRows,
@@ -267,7 +267,7 @@ export default function ProductForm({ productId }: { productId?: string }) {
     writeClone({
       form: { ...form, name, slug: slugify(name), sku: "", stock: "0", status: "draft" },
       images,
-      detailBlocks,
+      detailDoc,
       variants: variants.map((v) => ({ ...v, id: null, stock: "0", expectedStock: null, sku: "" })),
       nutritionRows,
       specRows,
@@ -390,8 +390,8 @@ export default function ProductForm({ productId }: { productId?: string }) {
         variants={variants}
         setVariants={setVariants}
         basePrice={toIntOrNull(form.price)}
-        detailBlocks={detailBlocks}
-        setDetailBlocks={setDetailBlocks}
+        detailDoc={detailDoc}
+        setDetailDoc={setDetailDoc}
         onSendToDetail={(files) => {
           intakeSeq.current += 1;
           setDetailIntake({ id: intakeSeq.current, files });

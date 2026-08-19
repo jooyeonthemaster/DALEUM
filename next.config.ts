@@ -1,18 +1,15 @@
 import type { NextConfig } from "next";
+import { IMAGE_SOURCE_PATTERNS } from "@/lib/image-sources";
 
 const nextConfig: NextConfig = {
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "ezmmutjazqsikopltmnj.supabase.co",
-        pathname: "/storage/v1/object/public/**",
-      },
-      {
-        protocol: "https",
-        hostname: "www.daleum.net",
-      },
-    ],
+    /**
+     * 허용 출처 목록은 src/lib/image-sources.ts 한 곳에만 산다.
+     * 상세페이지 편집기가 붙여넣기로 들어오는 img 를 걸러낼 때 **같은 목록**을 읽어야 하기
+     * 때문이다 — 목록이 갈라지면 편집기가 통과시킨 주소를 next/image 가 거부해
+     * 고객 상품 페이지가 렌더 중 throw 한다.
+     */
+    remotePatterns: IMAGE_SOURCE_PATTERNS,
     // Next 16 부터 필수 항목 — 명시하지 않으면 기본값 [75] 가 적용된다.
     // 코드에서 quality 를 따로 주지 않으므로 기본값 그대로 고정한다.
     qualities: [75],

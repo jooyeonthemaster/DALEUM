@@ -1,0 +1,200 @@
+{
+  "useImageUpload.ts": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "contract-violation",
+        "where": "useImageUpload.ts:33-39 (DetailImageInsert), 124-140 (조각 push)",
+        "problem": "DetailImageInsert 가 src/alt/width/height 만 돌려주고 widthPct·align 을 빼먹는다. 이름이 틀린 것은 없지만, ImageNode(detail-doc-v2.ts:79-92)와 detailImage attrs(tiptap-bridge.ts:158-167)가 요구하는 필수 두 개가 없다. 하류의 기본값이 전부 반대쪽으로 잡혀 있어서 위험하다 — tiptap-bridge.ts:182-185 의 attrAlign 은 align 이 없으면 \"left\" 로 굳고, DetailDocRenderer.tsx:69-71 의 isSeamless 는 widthPct===100 && align===\"center\" 일 때만 조각을 한 덩어리로 묶는다. 즉 align 이 비면 조각마다 FLOW.imageFrame 테두리(detail-prose.ts:48)와 space-y-5 간격이 들어가, 고객 화면에서 통이미지가 4000px 마다 선으로 잘려 보인다. 그런데 이 파일 124-126 줄 주석은 \"조각 경계에 선이 생기지 않는다\" 고 보증하듯 적어 두었다. 게다가 반환값에는 이 항목이 통이미지 조각인지 상품컷 한 장인지 구분할 표식이 없어, 부르는 쪽이 둘을 다르게 다루고 싶어도 다룰 수가 없다.",
+        "fix": "DetailImageInsert 에 widthPct: number 와 align: \"left\"|\"center\"|\"right\" 를 추가하고, 조각(uploadDetailImage 경로)은 반드시 widthPct: 100, align: \"center\" 로 채워서 돌려준다. 상품컷 한 장(uploadGalleryImage 경로)도 같은 기본값(100/center)으로 채운다. 추가로 조각 묶음을 식별할 수 있게 seamGroup?: string (파일당 하나의 id) 같은 표식을 붙여, 부르는 쪽이 \"이 연속된 N개는 원래 한 장이었다\" 를 알 수 있게 한다. 이렇게 하면 부르는 쪽은 반환 객체를 그대로 attrs 로 복사하기만 하면 되고, 문서 모델의 필수 속성을 부르는 쪽이 지어내는 일이 사라진다."
+      },
+      {
+        "severity": "major",
+        "kind": "perf",
+        "where": "useImageUpload.ts:121, 128",
+        "problem": "파일 한 장마다 원본을 3번 풀 디코딩한다. (1) 121줄 readImageMeta(file) → createImageBitmap(file) 로 원본 전체 디코딩, (2) uploadDetailImage 내부가 admin-upload.ts:105 에서 readImageMeta(file) 를 또 부르는데 그 결과 meta 는 128줄에서 `const { slices } = ...` 로 버려진다, (3) sliceTallImage 가 image-pipeline.ts:278 에서 또 한 번 probe 한다. image-pipeline.ts 머리말이 실측으로 적어 둔 2083×18,830 자산이면 디코딩 한 번에 RGBA 약 157MB·수백 ms 이고, 그중 두 번은 순수 낭비다. 이 파일의 존재 이유가 바로 그 거대 통이미지를 감당하는 것이므로 특히 뼈아프다.",
+        "fix": "admin-upload.ts 의 uploadDetailImage/uploadGalleryImage 옵션에 meta?: ImageMeta 를 추가하고, 이 훅이 121줄에서 이미 읽어 둔 meta 를 넘겨 내부 재디코딩을 건너뛰게 한다(내부 readImageMeta / probe 는 meta 가 없을 때만 수행). 최소한 128줄에서 버리는 meta 라도 재사용해 이중 호출 하나는 없앤다."
+      },
+      {
+        "severity": "major",
+        "kind": "korean-copy",
+        "where": "useImageUpload.ts:68-72 (humanReason)",
+        "problem": "한글이 한 글자도 없는 오류를 전부 \"브라우저가 이 사진을 열지 못했습니다. JPG·PNG·WebP 로 바꿔서 올려 주세요.\" 로 바꾼다. 그런데 이 경로에서 나오는 비한글 오류는 디코딩 실패만이 아니다. 전송 실패(fetch 의 TypeError \"Failed to fetch\", 네트워크 끊김, 프록시 오류)도 여기로 떨어진다. admin-upload.ts:50 이 던지는 서버 오류는 한국어라 통과하지만, 그 앞단에서 연결 자체가 끊기면 관리자는 \"파일 형식을 바꾸라\" 는 엉뚱한 지시를 받는다. 사진 열 장을 JPG 로 변환해 다시 올려도 똑같이 실패하는, 시간만 버리는 안내다. 게다가 원인 문자열은 어디에도 남지 않아(console 출력 없음) 나중에 무슨 일이 있었는지 확인할 방법도 없다.",
+        "fix": "실패가 어느 단계에서 났는지 구분한다. readImageMeta 실패는 지금 문구를 유지하고, 업로드(uploadDetailImage/uploadGalleryImage) 실패는 \"사진을 서버로 보내지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요.\" 처럼 전송 실패용 문구를 쓴다. try 블록을 두 단계로 쪼개거나 humanReason(error, stage) 로 단계를 받게 하면 된다. 함께 console.warn 으로 원본 메시지를 남겨 나중에 원인을 추적할 수 있게 한다."
+      }
+    ]
+  },
+  "EditorStage.tsx + stage-context.ts": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "coordinate-bug",
+        "where": "stage-context.ts:29-32 (MOBILE_STAGE_GUTTER / MOBILE_CONTENT_WIDTH)",
+        "problem": "모바일 콘텐츠 칼럼을 390-25*2=340px 로 못 박았는데, 고객 화면의 실제 칼럼 폭은 그 값이 아니다. 고객 상세 섹션은 src/app/(shop)/products/[slug]/page.tsx:303 의 `container-hall` 안에 있고, globals.css:119-124 가 `padding-inline: var(--spacing-gutter)`, globals.css:58 이 `--spacing-gutter: clamp(1.25rem, 4vw, 3.5rem)` 이다. 뷰포트 390 에서 4vw=15.6px 이므로 clamp 하한 1.25rem=20px 이 적용되고, 칼럼 폭 = 390 - 20*2 = 350px 이다(그 안의 이미지는 FLOW.imageFrame 테두리 1px 씩 빠져 348px). 편집 캔버스는 340/338 을 그리므로 10px 어긋난다 — SPEC §1 의 G1(±2px) 이 모바일에서 곧바로 실패한다. 25 라는 숫자는 CSS 어디에서도 유도되지 않는다. SPEC §0 표의 '340' 은 스크롤바가 레이아웃 폭을 390→380 으로 깎은 상태에서 잰 값일 가능성이 크다(실기기·모바일 에뮬레이션에는 그 스크롤바가 없다).",
+        "fix": "MOBILE_STAGE_GUTTER 를 `--spacing-gutter` 의 하한과 같은 20 으로 고치고(MOBILE_CONTENT_WIDTH=350), 주석에 '390 뷰포트에서 clamp(1.25rem,4vw,3.5rem)=20px' 라는 유도 근거를 남겨라. 고치기 전에 scripts/parity-probe.js 를 고객 상세페이지에 뷰포트 390(스크롤바 없는 모바일 에뮬레이션)으로 주입해 contentWidth 를 직접 재고, 결과가 350 이면 docs/DETAIL-EDITOR-SPEC.md §0 표의 340/338 도 함께 정정하라(SSOT 가 틀린 것이므로 코드만 고치면 안 된다)."
+      },
+      {
+        "severity": "major",
+        "kind": "coordinate-bug",
+        "where": "EditorStage.tsx:182,191 (transform + transitionProperty) / 145-148 (info) / 215 (data-parity-scale)",
+        "problem": "`transform: scale(k)` 를 420ms 트랜지션 대상에 넣어 놓고(191행 `transitionProperty: \"width, transform, margin-left, margin-right\"`), 같은 순간 `scale` state 는 목표값으로 즉시 점프시켜 컨텍스트(146행)와 `data-parity-scale`(215행)로 방송한다. 트랜지션이 도는 420ms 동안 화면의 실제 배율 ≠ 방송된 scale 이다. 결과 ①parity-probe.js:24,38 이 `rect.width / data-parity-scale` 로 논리 폭을 되돌리므로 그 사이에 재면 768 이 아닌 엉뚱한 값이 나와 게이트가 거짓 통과/거짓 실패한다(SPEC §7 이 요구하는 '믿을 수 있는 계기'가 아니게 된다). ②DetailImageView.tsx:171-180 이 pointerdown 순간의 scale 을 스냅숏으로 잡아 resize-math.toDocumentX 의 나눗셈에 쓰므로, 창 리사이즈 직후·PC↔모바일 전환 직후 420ms 안에 손잡이를 잡으면 드래그 속도가 실제와 다르게 따라온다. 219행의 `width: contentWidth` 도 같은 문제다 — 칼럼 폭은 420ms 동안 애니메이션되는데 컨텍스트는 이미 목표값(340 또는 768)을 방송한다.",
+        "fix": "`transitionProperty` 에서 `transform` 을 빼고 배율은 즉시 적용하라(폭 전환만 애니메이션한다 — SPEC §4.3 이 애니메이션하라고 한 것은 width 다). contentWidth 도 마찬가지로, 전환 중에는 드래그를 시작하지 못하게 막거나(전환 플래그를 컨텍스트에 실어 손잡이를 비활성화) transitionend 이후에만 새 contentWidth/scale 을 방송하라. 어느 쪽이든 '방송된 값 = 화면에 실제로 적용된 값' 불변식을 코드로 보장하고 주석에 남겨라."
+      },
+      {
+        "severity": "major",
+        "kind": "contract-violation",
+        "where": "EditorStage.tsx:206-222 (캔버스 칼럼) ↔ extensions.ts:256,285",
+        "problem": "extensions.ts:256 이 '높이는 여기서 정하지 않는다 — 캔버스 CSS 가 [data-spacer][data-size] 로 칠한다' 고 명시하고 285행에서 `<div data-spacer data-size=\"md\">` 만 내보낸다. 그런데 저장소 전체에서 `[data-spacer]` 를 칠하는 CSS 가 없다(globals.css 가 유일한 스타일시트이고 해당 선택자가 없으며, detail-editor 폴더 어디에도 arbitrary variant 가 없다). 캔버스는 이 파일이므로 계약의 상대방이 비어 있다. 결과: 관리자가 '여백'을 넣으면 편집 캔버스에서는 높이 0 으로 아무 일도 일어나지 않는데, 고객 화면은 DetailDocRenderer.tsx:170 에 따라 16/32/64px 을 그린다. 저장은 되므로 에러도 안 난다 — 관리자는 여백을 넣었는지 알 수 없고, 넣을 때마다 고객 화면만 벌어진다.",
+        "fix": "여백 높이를 detail-prose.ts 에 `spacerHeight(size)` 또는 `SPACER_HEIGHT = { sm:16, md:32, lg:64 }` 로 한 벌만 두고, DetailDocRenderer.tsx:170 의 하드코딩을 그것으로 바꾼 뒤 EditorStage 의 캔버스 칼럼에도 같은 값으로 `[data-spacer]` 규칙을 얹어라(칼럼에 `[&_[data-spacer][data-size=sm]]:h-4` 식 arbitrary variant 를 붙이거나, 칼럼 안에 style 블록 하나를 두는 방식 중 하나로 캔버스가 소유한다는 것을 명시). 값을 양쪽에 각각 적으면 지금과 같은 사고가 반복된다."
+      },
+      {
+        "severity": "major",
+        "kind": "perf",
+        "where": "EditorStage.tsx:84-85, 102-108, 120 (observer.observe(frame)) 과 75 (trimY)",
+        "problem": "세로 보정값 trimY 를 '측정된 frameHeight' 에서 뽑고(75행), 그 높이를 얻으려고 프레임을 ResizeObserver 로 관측한다(120행). 그런데 이미지 폭 드래그 중에는 종횡비가 잠겨 있어 폭이 바뀔 때마다 프레임 높이도 매 프레임 바뀐다 → RO 발화 → rAF → measure() 가 `frame.offsetHeight` 와 `column.getBoundingClientRect()` 로 강제 레이아웃을 두 번 일으키고 `setMeasured` 로 React 상태를 갱신한다. 즉 pointermove 프레임마다 React 렌더+커밋이 돈다. SPEC §5.4 는 '드래그 중 React state 를 바꾸지 않는다' 를 60fps 의 조건으로 못 박았고, DetailImageView 는 그 규칙을 지켰는데 캔버스가 뒤에서 깨고 있다. 상세 통이미지가 4000px 높이인 이 프로젝트에서는 레이아웃 비용이 작지 않다.",
+        "fix": "frameHeight 를 React state 에서 빼라. measure() 의 rAF 안에서 `frame.style.marginBottom = -(frameHeight*(1-scale)) + \"px\"` 를 DOM 에 직접 써서 리렌더 없이 보정하고, state 에는 리렌더가 실제로 필요한 available/stageLeft 만 남겨라(이미 DetailImageView 가 쓰는 것과 같은 '움직이는 동안엔 DOM 만 만진다' 패턴이다). 추가로 드래그 세션이 열려 있는 동안에는 세로 보정 측정을 건너뛰도록 컨텍스트에 dragging 플래그를 두는 것도 검토하라."
+      }
+    ]
+  },
+  "extensions.ts": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "style-drift",
+        "where": "extensions.ts:143-151 (DetailStarterKit), 85-92 (alignAttribute), 119-126 (textSizeAttribute)",
+        "problem": "편집 캔버스의 글·목록·구분선·굵게에 detail-prose.ts 클래스가 **하나도** 붙지 않는다. StarterKit.configure 는 어떤 노드에도 HTMLAttributes(class)를 주지 않고(143-151), align/size 는 data-align/data-size 만 내보내며(90-91, 123-124), 저장소 전체를 grep 해도 그 data-* 나 ProseMirror 를 칠하는 CSS 가 없다(globals.css 395줄에는 p{text-wrap:pretty} 뿐). globals.css 는 @import \"tailwindcss\" 로 preflight 를 켜므로 캔버스에서 h2/h3 는 본문과 같은 크기(font-size:inherit), ul/ol 은 불릿·들여쓰기 없음(list-style:none;padding:0), blockquote 는 왼쪽 선 없음, hr 은 UA 기본선, p 는 16px/normal 로 그려진다. 고객 화면은 FLOW.paragraph(15px/1.95)·FLOW.heading2(headline-serif text-xl)·FLOW.listItem(pl-6 + '—')·FLOW.divider(h-px bg-ink-200)·BOLD_CLASS(font-semibold text-ink-900) 다(DetailDocRenderer.tsx:173-223). 폭만 768/390 으로 맞췄을 뿐 글자 크기·행간·불릿이 달라 **줄바꿈 위치가 고객 화면과 다르다** — SPEC §4.1 과 성공조건 G1(±2px 정합)의 전제가 무너진다. 즉 이 파일은 '스타일을 복사'하지 않은 대신 '스타일을 아예 안 준' 상태다(ACCENT_CLASS 만 36행에서 제대로 공유 중).",
+        "fix": "detail-prose.ts 상수를 스키마에서 그대로 주입하라. ① DetailStarterKit 에 노드별 HTMLAttributes 를 넣는다: paragraph:{HTMLAttributes:{class:FLOW.paragraph}}, heading 은 레벨별로 달라 configure 로 부족하니 Heading 을 extend 해 renderHTML 에서 level===3?FLOW.heading3:FLOW.heading2 를 붙인다, bulletList:{HTMLAttributes:{class:`${FLOW.list}`}}, orderedList 동일, blockquote:{HTMLAttributes:{class:FLOW.quote}}, horizontalRule:{HTMLAttributes:{class:FLOW.divider}}. ② alignAttribute.renderHTML 은 data-align 과 함께 {class: ALIGN_CLASS[value]} 를, textSizeAttribute.renderHTML 은 data-size 와 함께 {class: flowSizeClass(value)} 를 반환한다(mergeAttributes 가 class 를 이어 붙이는 것은 core/dist/index.js:1679-1685 에서 확인됨 — 안전하다). ③ listItem 은 FLOW.listItem + FLOW.bulletMarker 를 붙여야 '—' 마커가 고객과 같아진다. ④ bold 는 StarterKit 의 Bold 를 configure({HTMLAttributes:{class:BOLD_CLASS}}) 로 감싼다. 절대 globals.css 에 값을 다시 적지 말 것(SPEC §8 위반)."
+      },
+      {
+        "severity": "critical",
+        "kind": "contract-violation",
+        "where": "extensions.ts:143-151 (StarterKit 의 blockquote/listItem 을 기본형 그대로 켬)",
+        "problem": "스키마가 tiptap-bridge 가 저장할 수 없는 구조를 허용한다 → 저장은 성공하고 내용만 사라진다(이 파일 서두 4-7행이 경고한 바로 그 사고). 실제 정의를 확인했다: node_modules/@tiptap/extension-blockquote/dist/index.js:53 `content: \"block+\"`, node_modules/@tiptap/extension-list/dist/index.js:414 `content: \"paragraph block*\"`, 513행 `Tab: () => sinkListItem`. 반면 bridge 는 blockquote 에서 **첫 paragraph 하나만** 읽고(tiptap-bridge.ts:248 `node.content?.find(c=>c.type===\"paragraph\")`), listItem 도 **첫 paragraph 하나만** 읽는다(tiptap-bridge.ts:202-205 itemInline). 재현: ①인용 안에서 Enter → 둘째 문단부터 저장 시 소멸. ②목록에서 Tab(ListItem 기본 키맵) → 들여쓴 하위 항목 전부 소멸. ③group:\"block\" 인 detailImage/spacer 를 인용·목록 안에 끌어넣으면 통째로 소멸. 관리자에게는 '저장했는데 다시 열면 글이 없어졌다' 로만 보인다.",
+        "fix": "스키마를 문서 모델 크기로 좁혀라(이 파일의 선언된 책임이다). StarterKit.configure 에 blockquote:false, listItem:false 를 추가하고 `import { Blockquote } from \"@tiptap/extension-blockquote\"`, `import { ListItem } from \"@tiptap/extension-list\"` 후 buildExtensions 에 `Blockquote.extend({ content: \"paragraph\" })`, `ListItem.extend({ content: \"paragraph\" })` 를 넣는다(둘 다 설치돼 있음). 이러면 Tab 의 sinkListItem 은 실패해 아무 일도 일어나지 않고, 인용 안 Enter 는 인용을 벗어나므로 사라지는 글이 없다. 스키마를 넓게 두고 싶다면 대안은 하나뿐이다 — bridge 를 무손실로 고쳐 blockquote 의 문단 전부와 중첩 목록을 담도록 문서 모델까지 확장하는 것. 둘 중 하나를 반드시 택하되 지금처럼 어긋난 채로 두지 말 것."
+      },
+      {
+        "severity": "critical",
+        "kind": "contract-violation",
+        "where": "extensions.ts:403-407 (DetailImage.parseHTML — `[{ tag: \"img[src]\" }]`)",
+        "problem": "src 를 전혀 검사하지 않고 모든 img 를 detailImage 로 받아들인다. 관리자가 다른 사이트/한글·워드 문서에서 사진을 복사해 붙이면 외부 URL 또는 data:/blob: URI 가 그대로 노드가 되고, bridge 는 문자열이기만 하면 저장한다(tiptap-bridge.ts:266-267 `typeof src === \"string\" && src`). 그 뒤 두 갈래로 터진다. ①data: URI — description_doc 에 수 MB base64 가 박히고, 다시 읽을 때 parseDetailDocJson 이 `^https?://` 로 걸러 노드를 통째로 버린다(detail-doc-v2.ts:462) → '저장은 됐는데 열면 사진이 없다'. ②외부 https 호스트 — 검사를 통과해 고객 페이지까지 흘러가고, DetailDocRenderer 의 next/image 가 next.config.ts:5-15 의 remotePatterns(supabase, www.daleum.net) 에 없는 호스트라며 렌더 시점에 throw 한다 → **고객 상품 페이지가 죽는다**. detail-editor 전체에 paste/drop 핸들러가 없어(grep 결과 0건) 이 경로를 막는 곳이 아무 데도 없다. 주석(403-404)은 '이 규칙이 없으면 붙여넣은 사진이 사라진다'고 적었지만, 실제로는 들여보낸 뒤 나중에 더 나쁘게 터진다.",
+        "fix": "parseHTML 에 getAttrs 로 허용 호스트 검사를 넣어라: `return [{ tag: \"img[src]\", getAttrs: (el) => { const src = (el as HTMLElement).getAttribute(\"src\") ?? \"\"; return ALLOWED_IMAGE_SRC.test(src) ? null : false; } }]` — false 를 돌려주면 ProseMirror 가 그 규칙을 아예 적용하지 않아 외부 사진이 문서에 들어오지 못한다. ALLOWED_IMAGE_SRC 는 next.config.ts 의 remotePatterns 와 같은 출처(supabase storage, www.daleum.net)를 가리키는 공유 상수로 한 곳에 두고 양쪽이 쓰게 한다. 그리고 편집기 조립부에 editorProps.handlePaste/handleDrop 를 붙여 외부 이미지·클립보드 파일은 useImageUpload 로 업로드한 뒤 setDetailImage 로 넣도록 연결하라(그래야 '붙여넣기가 그냥 안 된다'는 민원이 안 생긴다)."
+      },
+      {
+        "severity": "major",
+        "kind": "contract-violation",
+        "where": "extensions.ts:108-116 (blockIdAttribute, 특히 111행 parseHTML)",
+        "problem": "blockId 를 data-block-id 로 내보내고(112-115) 다시 파싱해 들여온다(111). keepOnSplit:false 는 Enter 로 나눌 때만 막아 줄 뿐, **복사→붙여넣기** 경로는 그대로 열려 있다. ProseMirror 는 같은 편집기 안 복사도 클립보드 HTML 을 스키마 규칙으로 다시 파싱하므로, 문단·이미지·여백을 복제하면 data-block-id 가 함께 복제되어 문서에 같은 id 가 둘 생긴다. 그 상태로 저장하면 bridge 의 attrId 는 값이 있으니 새 id 를 발급하지 않고(tiptap-bridge.ts:196-199) 중복 id 가 그대로 description_doc 에 들어간다. 고객 렌더러는 id 를 React key 로 쓰므로(DetailDocRenderer.tsx:97,104,145-171) 중복 key 경고와 재조정 오작동이 따라온다. 주석 104-106 은 '두 칸이 같은 id 를 갖는 순간 렌더 key 와 저장본이 동시에 망가진다'고 스스로 적어 놓고 절반만 막았다.",
+        "fix": "blockIdAttribute.parseHTML 을 `() => null` 로 바꿔라. 문서 로드는 HTML 이 아니라 docToTiptap→JSON→setContent 경로라 id 는 JSON 으로 그대로 살아 들어오고(HTML 파싱은 붙여넣기/외부 유입 전용이다), 파싱에서 id 를 버리면 붙여넣은 칸은 blockId=null 로 태어나 bridge 의 attrId 가 새 id 를 발급한다 — 이 파일이 원래 의도한 동작이다. renderHTML 쪽 data-block-id 출력은 디버깅에 쓰이니 남겨도 무해하다."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "extensions.ts:251-296 (Spacer, 특히 256행 주석과 284-286 renderHTML)",
+        "problem": "'높이는 여기서 정하지 않는다 — 캔버스 CSS 가 [data-spacer][data-size] 로 칠한다'고 적었지만 그 CSS 가 저장소에 없다(`grep -rn data-spacer src/ scripts/` 결과는 extensions.ts 자신의 3줄뿐). 결과적으로 여백 칸은 편집기에서 높이 0 인 빈 div 다 — 관리자가 「여백 넣기」를 눌러도 화면에 아무 변화가 없고, atom·selectable 이지만 클릭할 면적이 없어 선택·삭제도 못 한다. 게다가 값의 출처가 둘이 되는 것을 막겠다는 주석과 달리, 고객 쪽은 sm16/md32/lg64 를 DetailDocRenderer.tsx:170 에 하드코딩해 두었다 — 지금은 '둘'도 아니고 '하나(고객)뿐'이라 미리보기가 애초에 존재하지 않는다.",
+        "fix": "detail-prose.ts 에 `export const SPACER_HEIGHT = { sm: 16, md: 32, lg: 64 } as const;` 를 두고 DetailDocRenderer.tsx:170 이 이 상수를 쓰게 바꾼 뒤, Spacer.renderHTML 이 같은 상수로 인라인 style(height) 을 내보내게 하라: `[\"div\", mergeAttributes(HTMLAttributes, { \"data-spacer\": \"\", style: `height:${SPACER_HEIGHT[size]}px` })]`. 편집 중 눈에 보이고 잡히게 하려면 선택 시 옅은 배경을 주는 작은 노드뷰를 붙이는 편이 낫다(SPEC §6 '순서 변경' 대상이기도 하다)."
+      }
+    ]
+  },
+  "EditorToolbar.tsx": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "contract-violation",
+        "where": "EditorToolbar.tsx:305-315 (BLOCK_PRESETS 렌더) / 238-247",
+        "problem": "인용(blockquote) 안에서 '큰제목·작은제목·목록·번호 목록' 버튼이 disabled={off} 뿐이라 눌린다. blockquote 의 스키마는 content: \"block+\" 이라(node_modules/@tiptap/extension-blockquote/dist/index.js) heading/bulletList 가 그대로 들어가고, tiptap-bridge.ts 의 blockquote 분기는 `const para = node.content?.find((c) => c.type === \"paragraph\")` 로 문단만 찾으므로 para 가 undefined → pmToInline(undefined) → [{text:\"\"}]. 실측 재현: 인용에 \"손으로 지은 밥맛\" 을 쓰고 큰제목(또는 목록)을 누르면 화면은 바뀌어 보이는데 저장 결과가 [{\"id\":\"q1\",\"type\":\"quote\",\"text\":[{\"text\":\"\"}],\"lead\":true}] 로, 관리자가 쓴 글이 통째로 사라진다. 오류도 경고도 없다. 목록 안에서는 listItem 의 content \"paragraph block*\" 가 막아 주지만(명령 성공 false), 인용은 아무것도 막지 않는다. 이 파일 182-185 줄 주석이 크기·정렬에 대해 세워 둔 원칙(\"눌러도 사라질 버튼은 아예 잠근다\")을 정작 블록 프리셋에는 적용하지 않았다.",
+        "fix": "readState 의 nested 판정을 블록 프리셋에도 적용한다. BLOCK_PRESETS 항목에 `enabled?: (s: ToolbarState) => boolean` 을 추가하고, 인용 안(s.isQuote)에서는 'quote'(끄기용)와 'paragraph' 만 남기고 h2/h3/bullet/ordered 를 disabled 로 잠근다. 목록 안(s.isBullet||s.isOrdered)에서도 같은 이유로 h2/h3/quote 를 잠근다(지금은 눌러도 명령이 false 로 실패해 '왜 안 먹히지'가 된다). 잠그는 대신 벗기고 싶다면 apply 를 `(c) => c.lift(\"blockquote\").toggleHeading({ level: 2 })` 처럼 인용을 먼저 벗기도록 바꿔야 하며, 어느 쪽이든 지금처럼 '누르면 글이 사라지는' 경로는 남기면 안 된다."
+      },
+      {
+        "severity": "major",
+        "kind": "contract-violation",
+        "where": "EditorToolbar.tsx:236-237 (BLOCK_PRESETS 의 paragraph 항목)",
+        "problem": "'본문' 버튼이 `apply: (c) => c.setParagraph()` 인데, setParagraph 는 `commands.setNode('paragraph')`(node_modules/@tiptap/extension-paragraph/dist/index.js:48) 즉 setBlockType 이라 목록·인용을 벗어나지 못한다. 실측: 인용 안에서 명령 성공 false(최상위 노드 여전히 blockquote), 목록 안에서도 false. 그런데 title 은 \"보통 글로 되돌립니다\" 라고 약속하고, isOn 은 s.isParagraph(중첩이면 false)라 버튼은 꺼진 것처럼 보인다 — 관리자가 보기엔 '꺼져 있는 버튼을 눌렀는데 안 켜진다'. 인용·목록에서 빠져나오는 유일한 길이 '인용'/'목록' 버튼을 한 번 더 누르는 것뿐인데 그 사실은 어디에도 드러나 있지 않다.",
+        "fix": "`apply: (c) => c.clearNodes().setParagraph()` 로 바꾼다(clearNodes 는 @tiptap/core 가 내보내는 정식 명령이며 목록·인용 래퍼를 벗긴다). 그러면 title '보통 글로 되돌립니다' 가 참이 되고, 위 critical 항목의 탈출구도 생긴다. clearNodes 를 쓰지 않을 거라면 목록·인용 안에서는 이 버튼을 disabled 로 잠그고 title 문구도 바꿔라."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "EditorToolbar.tsx:274-281 (useEditorState / `const s = picked ?? IDLE`)",
+        "problem": "편집기를 처음 열면 정렬 3개, 본문 크기 3개, '가격 옆에도 싣기' 가 전부 회색으로 잠겨 있다. 원인: @tiptap/react 3.30.2 의 EditorStateManager.getSnapshot() 은 `if (this.transactionNumber === this.lastTransactionNumber) return this.lastSnapshot;` 로 캐시하는데, watch() 가 editor 를 null→인스턴스로 갈아끼울 때 transactionNumber 를 올리지도 구독자에게 알리지도 않는다(node_modules/@tiptap/react/dist/index.js). DetailEditor.tsx 는 `immediatelyRender: false` 라 useEditor 가 첫 렌더에 null 을 돌려주므로 이 경로에 정확히 걸린다 → 첫 트랜잭션이 날 때까지 picked 가 null → s = IDLE → alignTarget/leadTarget 이 null, isParagraph 가 false → 세 묶음이 모두 disabled. 이 파일 16-19 줄 머리말이 '툴바가 스스로 구독하므로 커서와 어긋나지 않는다' 고 약속한 것과 정반대 상태로 열린다.",
+        "fix": "폴백을 IDLE 이 아니라 지금 에디터에서 직접 읽게 한다: `const s = picked ?? (editor ? readState(editor) : IDLE);`. readState 는 순수 조회라 렌더 중 호출해도 안전하고, 첫 트랜잭션 전에도 커서 자리의 서식이 그대로 나온다."
+      },
+      {
+        "severity": "major",
+        "kind": "style-drift",
+        "where": "EditorToolbar.tsx:363 (`iconClassName={off || s.isAccent ? \"\" : \"text-forest-700\"}`)",
+        "problem": "강조색 미리보기 색을 문자열 \"text-forest-700\" 로 손수 적었다. 이 값은 src/components/catalog/detail-prose.ts 의 `export const ACCENT_CLASS = \"text-forest-700\"` 와 같은 값을 복사한 것이고, 같은 폴더의 extensions.ts 는 `import { ACCENT_CLASS } from \"@/components/catalog/detail-prose\"` 로 제대로 가져다 쓴다. SPEC §8 이 금지한 '고객 렌더러 스타일 복사' 에 해당한다. 브랜드 강조색을 forest-600 등으로 바꾸는 날, 실제 칠해지는 색(ACCENT_CLASS)과 버튼이 미리 보여 주는 색이 갈라진다 — 361-362 줄 주석이 내건 '눌러 보지 않고도 무슨 색인지 알게 한다' 는 약속이 그대로 거짓말이 된다.",
+        "fix": "`import { ACCENT_CLASS } from \"@/components/catalog/detail-prose\";` 를 추가하고 `iconClassName={off || s.isAccent ? \"\" : ACCENT_CLASS}` 로 바꾼다."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "EditorToolbar.tsx:302 (`className=\"sticky top-0 z-20 ...\"`)",
+        "problem": "툴바가 `sticky top-0 z-20` 인데, 이 화면의 조상인 AdminHeader 는 `sticky top-0 z-30` 에 높이 h-14(56px)다(src/components/admin/AdminHeader.tsx:38, AdminShell 에서 항상 렌더). 스크롤 컨테이너는 문서 본문이라(AdminShell 의 main 에 overflow 없음) 툴바가 뷰포트 y=0 에 붙는 순간 머리말(z-30) 뒤로 완전히 들어간다. 긴 상세페이지를 스크롤하며 편집할 때 툴바가 보이지 않는다 — sticky 를 건 이유 자체가 무산된다. 같은 저장소가 이미 이 함정을 겪고 기록해 두었다: src/app/admin/products/_list/BulkActionBar.tsx:21-29 의 주석('관리자 헤더(AdminHeader) 는 sticky top-0 z-30 이고 높이가 h-14(3.5rem)다')과 `const BAR_STICKY = \"sticky top-14 z-20\"`.",
+        "fix": "`sticky top-14 z-20` 로 바꾼다(BulkActionBar 와 같은 값). z-20 은 머리말 z-30 아래, 본문 위라 그대로 두면 된다. 바꾼 뒤 긴 문서에서 스크롤해 툴바가 머리말 바로 아래에 붙어 계속 보이는지 직접 확인할 것."
+      }
+    ]
+  },
+  "DetailImageView.tsx (detailImage 노드뷰)": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "contract-violation",
+        "where": "DetailImageView.tsx:346-395 (selected 블록 전체 — 손잡이/툴바 어디에도 data-drag-handle 이 없다)",
+        "problem": "이미지 블록을 마우스로 끌어 순서를 바꿀 수 없다. 근거: extensions.ts:331 에서 detailImage 는 draggable:true 로 선언되는데, @tiptap/core NodeView.stopEvent (node_modules/@tiptap/core/dist/index.js:8310-8313) 가 `isDraggable && isDragEvent && !isDragging && event.target === this.dom` 이면 dragstart 를 preventDefault 한다. isDragging 은 8314-8317 에서 mousedown 대상이 `[data-drag-handle]` 안에 있을 때만 true 가 되는데, 이 파일은 그런 표식을 가진 요소를 하나도 그리지 않는다. 따라서 dragstart 는 언제나 취소된다. 대체 경로도 없다 — 코드베이스 전체에 data-drag-handle 도(grep 결과 detail-editor 안 0건), Alt+↑/↓ 키맵도, EditorToolbar 의 '위로/아래로' 버튼도 없다. SPEC §6 '순서 변경 = 블록 드래그 핸들 + Alt+↑/↓' 와 성공조건 G3-② '블록 순서 드래그' 가 구조적으로 불가능하다.",
+        "fix": "selected 일 때 뜨는 툴바(399행 div) 맨 앞에 `data-drag-handle` 과 `draggable` 을 가진 손잡이 버튼(예: GripVertical, type=\"button\", aria-label=\"끌어서 순서 바꾸기\")을 추가한다. 그 버튼 위에서 mousedown 이 나야 stopEvent 가 isDragging=true 로 전환해 native 드래그를 통과시킨다. 폭 조절 손잡이(350-382행)에는 절대 붙이지 말 것 — 두 제스처가 같은 요소에서 겹치면 폭 드래그가 유령 이미지 드래그로 바뀐다."
+      },
+      {
+        "severity": "major",
+        "kind": "style-drift",
+        "where": "DetailImageView.tsx:296-301 (frameClass) + 313-318 (프레임 div)",
+        "problem": "고객 화면(DetailDocRenderer.tsx:70-92 isSeamless/chunkFlow)은 widthPct=100 · align=center 인 이미지가 연달아 오면 **한 덩어리로 묶어** 테두리를 한 번만 두르고 슬라이스 사이 간격을 0으로 그린다. 편집 캔버스는 이미지마다 FLOW.imageFrame(=border) 을 따로 두르고, 게다가 PM 루트가 FLOW.root(space-y-5, DetailEditor.tsx:83)라 슬라이스 사이에 20px 크림색 틈이 생긴다. 운영 상품의 상세는 거의 전부 통이미지를 잘라 붙인 100%/center 슬라이스이므로, 관리자는 사실상 모든 상품에서 '줄무늬로 끊어진 그림'을 보고 고객은 '이어진 그림'을 본다. 폭(G1 ±2px)은 맞지만 이 파일의 존재 이유인 1:1 이 세로 방향에서 깨진다.",
+        "fix": "노드뷰가 이웃을 볼 수 없으므로 두 단계로 고친다. ①DetailEditor.tsx:71 의 ReactNodeViewRenderer(DetailImageView) 에 옵션을 준다 — `{ attrs: ({ node }) => ({ \"data-seamless\": node.attrs.widthPct === 100 && node.attrs.align === \"center\" ? \"\" : null }) }` (ReactNodeViewRendererOptions.attrs 는 노드 갱신마다 호출된다). ②캔버스 CSS 에 `[data-seamless] + [data-seamless] { margin-top: 0 }` 와 `[data-seamless] + [data-seamless] [data-image-frame] { border-top-width: 0 }` 를 넣어 고객의 chunkFlow 결과와 같은 모양을 만든다. 클래스 문자열은 지금처럼 detail-prose 에서 계속 가져온다."
+      },
+      {
+        "severity": "major",
+        "kind": "coordinate-bug",
+        "where": "DetailImageView.tsx:163 (paint 안 badge.style.top) + 191 (frameTopRef)",
+        "problem": "scale 보정이 빠진 유일한 자리다. frameTopRef 는 getBoundingClientRect().top(=축소가 반영된 화면 px), pointerRef.y 는 clientX/Y(화면 px)인데, 그 차이를 축소된 서브트리 안의 CSS px 값(badge.style.top)으로 그대로 쓴다. 스테이지에 transform:scale(k) 가 걸려 있으면(EditorStage.tsx:184) 화면상 실제 이동량은 k배가 되어 배지가 포인터를 따라오지 못한다. 오차 = (1-k) × (포인터-프레임 상단 거리). 통이미지는 화면 높이가 수천 px 이라 k=0.7 만 되어도 배지가 수백 px 위에 붙는다. resize-math 의 좌표 규칙('화면 px 은 받는 즉시 문서 공간으로 나눈다')을 이 한 줄만 어겼다.",
+        "fix": "세션에 이미 scale 이 들어 있으므로(session.scale, resize-math.ts ResizeSession) `badge.style.top = `${(pointerRef.current.y - frameTopRef.current) / (session.scale || 1)}px`` 로 바꾼다. 덤으로 frameTopRef 는 pointerdown 때 한 번만 재므로(191행) 드래그 중 페이지를 스크롤하면 또 어긋난다 — 배지를 프레임 기준이 아니라 position:fixed 로 clientY 에 직접 붙이면 두 문제가 함께 사라진다."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "DetailImageView.tsx:257-282 (onImageLoad 의 치수 자동 보정)",
+        "problem": "'관리자가 한 일이 아니므로 실행취소에 남기지 않는다'며 addToHistory:false 만 달았는데, 그것은 히스토리만 막을 뿐 onUpdate 는 그대로 탄다. 경로: view.dispatch(270-276) → DetailEditor.tsx:100-105 onUpdate → onChange(setDetailDoc) → ProductForm.tsx:106-108 snapshot 에 detailDoc 포함 → useProductDraft.ts:72 `dirty = armed && serialized !== baseline` 이 true. 레거시 상품은 마크다운에 치수가 없어 1080×4000 공칭값으로 파싱되므로(detail-doc-v2.ts:229-230, IMAGE_RE 의 |WxH 는 선택) 상세 탭을 **열기만 해도** 이미지 수만큼 트랜잭션이 나가고 폼이 dirty 가 된다. 결과: ①ProductForm.tsx:134 useUnsavedGuard 가 '저장하지 않은 변경' 으로 이탈을 막고 ②useProductDraft.ts:94-100 이 localStorage 초안을 자동 저장해 다음 방문 때 '이어서 쓰시겠습니까' 유령 제안이 뜬다. 관리자는 아무것도 만지지 않았다.",
+        "fix": "보정 트랜잭션에 표식을 하나 더 단다 — `tr.setMeta(\"daleum:silentMeasure\", true)`. DetailEditor 의 onUpdate 는 v3 에서 { editor, transaction } 을 받으므로(@tiptap/core EditorEvents.update:1424-1432) `if (transaction.getMeta(\"daleum:silentMeasure\")) return;` 로 onChange 를 건너뛴다. (치수는 다음 실제 편집 때 문서와 함께 저장된다.)"
+      }
+    ]
+  },
+  "CropModal.tsx": {
+    "ok": false,
+    "issues": [
+      {
+        "severity": "critical",
+        "kind": "other",
+        "where": "CropModal.tsx:341-372 apply() (특히 354-358, 363)",
+        "problem": "상세 슬라이스를 자르면 해상도가 절반으로 떨어진 채 저장된다. cropImage 에 `maxEdge: GALLERY_MAX_EDGE`(=2000, image-pipeline.ts:28 주석에 '갤러리(상품컷) 이미지의 긴 변 상한'이라고 명시)를 넘기는데, 이 편집기의 주력 콘텐츠는 useImageUpload → uploadDetailImage → sliceTallImage 가 만든 **1080×4000** 슬라이스다(image-pipeline.ts:22-25, useImageUpload.ts:123-138). 전체 선택으로 자르면 scale = 2000/4000 = 0.5 → **540×2000** 이 저장된다. 고객 화면은 이 그림을 766px 칼럼에 그리므로(SPEC §0) 540px 소스가 1.42배 늘어나 눈에 띄게 흐려진다. 세로 2000px 을 넘는 크롭이면 언제나 폭이 깎인다(1080×2400 → 900×2000). 게다가 뒤이어 부르는 uploadGalleryImage 는 이름 그대로 '상품컷 한 장 업로드'(admin-upload.ts:55-67)이고 내부에서 compressGalleryImage(maxEdge 기본 2000)를 한 번 더 태우므로, 349-353 주석의 설명대로 여기서 maxEdge 만 키워도 그쪽에서 다시 깎인다. 즉 현재 배선으로는 상세 이미지를 원해상도로 자를 방법이 아예 없다.",
+        "fix": "상세 이미지는 '긴 변' 이 아니라 **폭** 기준 상한(DETAIL_TARGET_WIDTH=1080)을 걸어야 한다. ①cropImage 호출의 maxEdge 를 세로로 긴 결과에서도 폭 1080 이 유지되도록 계산해 넘기고(예: maxEdge = max(1080, 잘린 높이) 처럼 폭이 줄지 않는 값), ②업로드는 uploadGalleryImage 가 아니라 postBlob 을 쓰는 상세 전용 경로(uploadDetailImage 계열)를 추가하거나 uploadGalleryImage 에 maxEdge 옵션을 뚫어 2차 축소를 없앤다. 둘 중 하나만 고치면 다른 쪽에서 그대로 깎이니 반드시 같이 고칠 것."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "CropModal.tsx:479-491 (disabled={!ready}), 197-198 (ready 정의), 386-400 (비율 버튼)",
+        "problem": "저장 중에도 「이대로 자르기」가 눌린다. `busy = phase===\"cropping\"||phase===\"uploading\"`, `ready = phase===\"ready\" || busy` 이므로 업로드 중에는 !ready 가 false → 버튼이 **활성 상태**다(스피너를 돌리면서 클릭을 받는다). 두 번 누르면 apply() 가 두 번 돌아 파일이 두 번 업로드되고 onCropped/onClose 가 두 번 호출된다. 비율 버튼(390)도 같은 `disabled={!ready}` 라 저장 중 비율을 바꿀 수 있는데, apply() 는 시작 시점의 rectRef 를 스냅숏하므로(344) 첫 번째와 두 번째가 **서로 다른 영역**을 잘라 올리고 늦게 끝난 쪽이 이긴다 — 관리자가 마지막으로 본 영역이 저장된다는 보장이 없다. 그만두기 버튼만 `disabled={busy}` 로 올바르다(473).",
+        "fix": "자르기 버튼은 `disabled={phase !== \"ready\"}`, 비율 버튼도 `disabled={phase !== \"ready\"}` 로 바꾼다. apply() 첫 줄에 `if (busy) return;` 재진입 가드도 함께 둘 것."
+      },
+      {
+        "severity": "major",
+        "kind": "other",
+        "where": "CropModal.tsx:417-424 (max-h-[54vh]) 및 404 래퍼",
+        "problem": "세로로 긴 상세 슬라이스를 열면 미리보기가 손톱만 해져 사실상 조작이 불가능하다. Chromium 151/뷰포트 900px 에서 이 마크업 그대로 재현해 실측한 결과 1080×4000 그림이 **131×486** 으로 그려진다(모달 lg=768px 라 가로 여유는 704px 인데 max-h-[54vh]=486px 가 먼저 걸린다). 이 배율에서 포인터 1px = 원본 8.2px 이고, minSide(66행)가 정한 최소 변 54원본px 은 화면상 6.5px 다. 좌표 계산 자체는 scale(311, 321-322)로 정확히 보정되어 틀리지 않지만, 관리자가 '가장자리만 다듬는' 조작(270행 주석이 상정한 주 용도)을 할 수 없다.",
+        "fix": "세로로 긴 그림은 높이가 아니라 **폭** 기준으로 맞추고(크롭 면을 세로 스크롤 가능한 컨테이너에 넣기), 또는 확대 배율(1x/2x/맞춤) 토글을 주거나, 최소한 스테이지 높이를 키우고(70~76vh) 현재 표시 배율을 문구로 알린다. 셋 다 어려우면 최소 변 하한을 화면 기준으로도 보장(예: 화면상 24px 이상)해 손잡이를 잡을 수 있게 할 것."
+      }
+    ]
+  }
+}

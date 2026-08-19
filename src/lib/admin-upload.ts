@@ -16,6 +16,7 @@ import {
   sliceTallImage,
   type DetailSlice,
   type ImageMeta,
+  type ProcessedImage,
 } from "./image-pipeline";
 
 export type UploadBucket = "products" | "banners" | "reviews";
@@ -73,6 +74,36 @@ export async function uploadGalleryImage(
   };
 }
 
+/**
+ * 이미 규격을 맞춘 결과물을 **그대로** 올린다 — 전처리를 다시 하지 않는다.
+ *
+ * 자르기(detail-editor/CropModal)처럼 부르는 쪽이 cropImage 로 치수·포맷을 이미 정해 둔
+ * 경우가 있다. 그때 uploadGalleryImage 를 태우면 안에서 compressGalleryImage 가 한 번 더
+ * 돌면서 두 가지 손해가 난다.
+ *  1) 긴 변 2,000 상한이 다시 걸린다. 세로로 긴 상세 조각(1,080×4,000)은 그 상한 때문에
+ *     폭이 540 으로 반토막 나므로, 부르는 쪽에서 상한을 아무리 잘 잡아도 여기서 도로 깎인다.
+ *  2) 이미 손실 압축된 WebP 를 다시 인코딩해 화질이 한 세대 더 떨어진다(디코딩 비용은 덤).
+ * 그래서 여기서는 전송만 한다. 규격을 맞출 책임은 부르는 쪽에 있다.
+ */
+export async function uploadProcessedImage(
+  image: ProcessedImage,
+  {
+    bucket = "products",
+    prefix = "",
+    filename = "photo.webp",
+    sourceName = "",
+  }: {
+    bucket?: UploadBucket;
+    prefix?: string;
+    filename?: string;
+    /** 남길 원본 파일명 — 자르기처럼 사용자가 고른 파일이 없으면 비워 둔다 */
+    sourceName?: string;
+  } = {}
+): Promise<UploadedAsset> {
+  const url = await postBlob(image.blob, filename, bucket, prefix);
+  return { url, width: image.width, height: image.height, sourceName };
+}
+
 export interface SliceUploadResult {
   slices: UploadedAsset[];
   meta: ImageMeta;
@@ -91,18 +122,29 @@ export async function uploadDetailImage(
     bucket = "products",
     prefix = "",
     onProgress,
+    meta: knownMeta,
   }: {
     bucket?: UploadBucket;
     prefix?: string;
     /** (완료 조각 수, 전체 조각 수, 단계) */
     onProgress?: (done: number, total: number, stage: "slicing" | "uploading") => void;
+    /**
+     * 이미 읽어 둔 치수 — 있으면 여기서 다시 디코딩하지 않는다.
+     *
+     * 부르는 쪽은 대개 "상품컷인가 통이미지인가" 를 가리려고 readImageMeta 를 먼저 부른다
+     * (예: detail-editor/useImageUpload.ts, products/bulk/bulk-ingest.ts).
+     * 그런데 우리가 안에서 또 읽으면 같은 원본을 두 번 푸는 셈이다.
+     * 2083×18,830 짜리는 한 번 푸는 데 RGBA 약 157MB·수백 ms 라 그냥 넘길 낭비가 아니다.
+     * 안 넘겨도 전처럼 동작한다 — 선택 인자다.
+     */
+    meta?: ImageMeta;
   } = {}
 ): Promise<SliceUploadResult> {
   if (!isImageFile(file)) {
     throw new Error(`'${file.name}' 은 사진 파일이 아닙니다. JPG·PNG·WebP 사진을 올려 주세요.`);
   }
 
-  const meta = await readImageMeta(file);
+  const meta = knownMeta ?? (await readImageMeta(file));
   const pieces: DetailSlice[] = await sliceTallImage(file, {
     onProgress: (done, total) => onProgress?.(done, total, "slicing"),
   });

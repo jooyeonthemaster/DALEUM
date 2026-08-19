@@ -11,7 +11,7 @@
    ============================================================ */
 
 import ImageUploader, { type UploadedImage } from "@/components/admin/ImageUploader";
-import type { DetailBlock } from "@/lib/detail-doc";
+import type { DetailDoc } from "@/lib/detail-doc-v2";
 import type { Category } from "@/lib/types";
 import BasicTab from "../BasicTab";
 import DetailTab from "../DetailTab";
@@ -41,8 +41,8 @@ export interface FormTabPanelsProps {
   variants: VariantDraft[];
   setVariants: (next: VariantDraft[]) => void;
   basePrice: number | null;
-  detailBlocks: DetailBlock[];
-  setDetailBlocks: (blocks: DetailBlock[]) => void;
+  detailDoc: DetailDoc;
+  setDetailDoc: (doc: DetailDoc) => void;
   /** 상품 사진 탭에서 세로로 긴 사진을 상세페이지 쪽으로 넘길 때 부른다 */
   onSendToDetail?: (files: File[]) => void;
   /** 그렇게 넘어온 파일 (일련번호로 새 반입인지 가린다) */
@@ -109,8 +109,8 @@ export default function FormTabPanels(props: FormTabPanelsProps) {
         <DetailTab
           form={props.form}
           set={props.set}
-          detailBlocks={props.detailBlocks}
-          setDetailBlocks={props.setDetailBlocks}
+          detailDoc={props.detailDoc}
+          setDetailDoc={props.setDetailDoc}
           uploadPrefix={props.imagePrefix}
           detailIntake={props.detailIntake}
           onDetailIntakeDone={props.onDetailIntakeDone}

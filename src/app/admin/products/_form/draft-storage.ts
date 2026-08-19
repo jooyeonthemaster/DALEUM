@@ -16,7 +16,7 @@
      남아 있으면 다음에 새 상품을 만들 때 엉뚱한 값이 따라붙는다.
    ============================================================ */
 
-import type { DetailBlock } from "@/lib/detail-doc";
+import type { DetailDoc } from "@/lib/detail-doc-v2";
 import type { FormState, KvRow, VariantDraft } from "../form-types";
 
 /**
@@ -35,7 +35,8 @@ export interface ProductImageDraft {
 export interface ProductFormSnapshot {
   form: FormState;
   images: ProductImageDraft[];
-  detailBlocks: DetailBlock[];
+  /** 상세페이지 문서 v2 — 옛 초안(칸 목록)과 모양이 달라 DRAFT_VERSION 을 올렸다 */
+  detailDoc: DetailDoc;
   variants: VariantDraft[];
   nutritionRows: KvRow[];
   specRows: KvRow[];
@@ -47,7 +48,7 @@ interface StoredDraft extends ProductFormSnapshot {
   savedAt: number;
 }
 
-const DRAFT_VERSION = 3;
+const DRAFT_VERSION = 4;
 const DRAFT_PREFIX = "daleum:product-draft:";
 const CLONE_KEY = "daleum:product-clone";
 const FLASH_KEY = "daleum:product-saved";
@@ -62,7 +63,7 @@ export function serializeSnapshot(snap: ProductFormSnapshot): string {
   return JSON.stringify([
     snap.form,
     snap.images,
-    snap.detailBlocks,
+    snap.detailDoc,
     snap.variants,
     snap.nutritionRows,
     snap.specRows,
@@ -86,7 +87,7 @@ export function readDraft(key: string): LoadedDraft | null {
       snapshot: {
         form: parsed.form,
         images: parsed.images ?? [],
-        detailBlocks: parsed.detailBlocks ?? [],
+        detailDoc: parsed.detailDoc ?? { version: 2, blocks: [] },
         variants: parsed.variants ?? [],
         nutritionRows: parsed.nutritionRows ?? [],
         specRows: parsed.specRows ?? [],

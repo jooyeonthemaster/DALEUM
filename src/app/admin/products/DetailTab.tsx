@@ -8,23 +8,27 @@
    맨 아래 스펙을 고치는 동안 위쪽에 무엇을 썼는지 볼 수 없다.
    그래서 네 구역으로 접어 두고, 구역마다 '이 내용이 고객 화면 어디에 실리는지'를
    한 줄로 붙였다.
+
+   상세페이지 구역은 이제 「고객 화면으로 보기」 토글이 없다 — 편집 화면 자체가
+   고객이 보는 폭(PC 768px / 모바일 340px)이기 때문이다. 미리보기를 따로 둘 이유가
+   사라졌다. 전에는 편집 화면이 1,066px 이라 보고 있는 것과 나가는 것이 달랐다.
    ============================================================ */
 
 import CustomerLayoutMap from "@/components/admin/detail/CustomerLayoutMap";
-import DetailPageEditor from "@/components/admin/detail/DetailPageEditor";
 import EditorSection from "@/components/admin/detail/EditorSection";
 import StoryEditor from "@/components/admin/detail/StoryEditor";
+import DetailEditor from "@/components/admin/detail-editor/DetailEditor";
 import { NUTRITION_PRESETS, SPEC_PRESETS } from "@/components/admin/detail/kv-presets";
 import KeyValueEditor from "./KeyValueEditor";
-import type { DetailBlock } from "@/lib/detail-doc";
+import { isTextNode, type DetailDoc } from "@/lib/detail-doc-v2";
 import type { FormState, KvRow } from "./form-types";
 
 export interface DetailTabProps {
   form: FormState;
   set: <K extends keyof FormState>(key: K, value: FormState[K]) => void;
-  /** 상세페이지 본문 — 마크다운 원문 대신 칸 목록으로 다룬다 */
-  detailBlocks: DetailBlock[];
-  setDetailBlocks: (blocks: DetailBlock[]) => void;
+  /** 상세페이지 본문 — 문서 하나로 다룬다 */
+  detailDoc: DetailDoc;
+  setDetailDoc: (doc: DetailDoc) => void;
   /** 상세 이미지를 올릴 경로 접두어 (상품 id 또는 임시 초안 id) */
   uploadPrefix: string;
   /** 상품 사진 탭에서 "상세페이지로 보내기" 로 넘어온 파일 */
@@ -44,8 +48,8 @@ function filledCount(rows: KvRow[]): number {
 export default function DetailTab({
   form,
   set,
-  detailBlocks,
-  setDetailBlocks,
+  detailDoc,
+  setDetailDoc,
   uploadPrefix,
   detailIntake,
   onDetailIntakeDone,
@@ -54,8 +58,8 @@ export default function DetailTab({
   specRows,
   setSpecRows,
 }: DetailTabProps) {
-  const imageCount = detailBlocks.filter((b) => b.type === "image").length;
-  const textCount = detailBlocks.length - imageCount;
+  const imageCount = detailDoc.blocks.filter((b) => b.type === "image").length;
+  const textCount = detailDoc.blocks.filter(isTextNode).length;
   const storyFilled = form.story.trim() !== "";
 
   return (
@@ -66,7 +70,7 @@ export default function DetailTab({
       <div className="mt-2">
         <EditorSection
           title="상세페이지"
-          description="넣은 사진은 페이지 아래 「상품 상세」에 전체 폭으로, 글은 가격 위 구매 영역에 요약으로 실립니다."
+          description="지금 보이는 화면이 고객이 보는 화면과 같은 크기입니다. 사진을 끌어다 놓고, 모서리를 잡아 끌어 크기를 바꾸세요."
           summary={
             <>
               사진 <span className="krw">{imageCount}</span>장 · 글{" "}
@@ -74,9 +78,9 @@ export default function DetailTab({
             </>
           }
         >
-          <DetailPageEditor
-            blocks={detailBlocks}
-            onChange={setDetailBlocks}
+          <DetailEditor
+            doc={detailDoc}
+            onChange={setDetailDoc}
             productName={form.name}
             uploadPrefix={uploadPrefix}
             intake={detailIntake}

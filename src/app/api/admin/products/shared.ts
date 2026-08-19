@@ -1,4 +1,5 @@
 import { isUuid, cleanStr } from "@/lib/orders";
+import { docToLegacyMarkdown, parseDetailDocJson } from "@/lib/detail-doc-v2";
 
 /* ============================================================
    관리자 상품 API 공용 — 입력 정제/검증
@@ -76,6 +77,9 @@ function strArray(v: unknown, label: string, maxItems: number, maxLen: number): 
 
    그래서 한도를 실데이터가 들어갈 만큼 올리고, 그래도 넘치면 **자르지 말고 거절**한다.
    ------------------------------------------------------------ */
+/** 상세페이지 문서 JSON 한 건의 상한(byte). 사진 100장 + 긴 본문도 넉넉히 들어간다. */
+const DOC_MAX_BYTES = 400 * 1024;
+
 const KV_KEY_MAX = 60;
 const KV_VALUE_MAX = 2_000;
 const KV_MAX_ITEMS = 60;
@@ -157,6 +161,31 @@ export function parseProductFields(
     else throw new InputError("카테고리 정보가 올바르지 않습니다.");
   }
   if (has("description")) out.description = cleanStr(p.description, 20_000);
+
+  /* 상세페이지 문서 v2 — 진실은 이쪽이고, description 은 여기서 파생한 미러다.
+     미러를 함께 쓰는 이유: 메타데이터(160자 발췌)·b2b 페이지·상품 건강도·
+     verify_catalog·일괄등록 시트가 전부 description 을 읽는다. 미러가 있으면
+     그 어느 것도 손대지 않아도 된다. 미러를 나중에 따로 계산하게 두면 반드시 어긋나므로
+     문서를 받는 바로 이 자리에서 같이 만든다. */
+  if (has("description_doc")) {
+    if (p.description_doc === null) {
+      out.description_doc = null;
+    } else {
+      const raw = JSON.stringify(p.description_doc);
+      if (raw.length > DOC_MAX_BYTES) {
+        throw new InputError(
+          `상세페이지 내용이 너무 깁니다. 사진이나 글을 조금 줄여 주세요. (${Math.round(
+            raw.length / 1024
+          ).toLocaleString("ko-KR")}KB / 최대 ${DOC_MAX_BYTES / 1024}KB)`
+        );
+      }
+      const doc = parseDetailDocJson(p.description_doc);
+      if (!doc) throw new InputError("상세페이지 내용을 읽을 수 없습니다. 다시 저장해 주세요.");
+      out.description_doc = doc;
+      // 미러는 문서에서 만든다 — 클라이언트가 보낸 description 이 있어도 덮어쓴다.
+      out.description = docToLegacyMarkdown(doc).slice(0, 20_000) || null;
+    }
+  }
   if (has("story")) out.story = cleanStr(p.story, 20_000);
   // 0003 마이그레이션으로 들어온 컬럼인데 폼과 API 어디에도 없어서, 관리자 화면만으로는
   // 영원히 채울 수 없었다. brand 는 고객 화면 표기용, supplier 는 관리자 식별용이다.
